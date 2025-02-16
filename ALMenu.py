@@ -5,15 +5,14 @@
 import streamlit as st
 import pandas as pd
 
-st.title("AngelList Startup Data Analyser")
+st.title("AngelList Startup Data Analyser - v0.1")
 
 # Sidebar for the menu
-
 with st.sidebar:
     st.header("Menu")
     option = st.selectbox(
         "Choose an option:",
-        ("Load Data", "Stats", "Top Investments", "Lead Stats", "Leads no markups", "Graphs")
+        ("Load Data", "Stats", "Top Investments", "Realized", "Lead Stats", "Leads no markups", "Graphs")
     )
 
 # st.header("Output")
@@ -376,6 +375,68 @@ elif option == "Leads no markups":
                 ),
                 "sum_invested": st.column_config.NumberColumn(
                     "Sum", help="Total invested into this syndicate", format="$%.0f"
+                ) 
+            },
+            hide_index=True,
+        )
+#        with st.container(height=300):
+#            st.write(result)
+    else:
+        st.write("Please Load Data file first before proceeding")
+
+elif option == "Realized":
+    st.subheader("Realized Investments", divider=True)
+    st.markdown("Show all the deals that were exited either as a full loss (Dead) or with a (partial) return of capital as recorded by AngelList")
+    if st.session_state.has_data_file:
+        # Load the data from the session state
+        df = st.session_state.df
+
+        # prompt: Using dataframe df: Write code that finds all the values in df that have Realized Value > 0 or that have Status = Realized or Status == Dead
+        # Find rows where 'Realized Value' is greater than 0
+        realized_value_gt_0 = df[df['Realized Value'] > 0]
+        # Find rows where 'Status' is 'Realized' or 'Dead'
+        status_realized_or_dead = df[df['Status'].isin(['Realized', 'Dead'])]
+        # Combine the two sets of rows using concatenation
+        combined_df = pd.concat([realized_value_gt_0, status_realized_or_dead])
+        # Drop duplicate rows to avoid redundancy
+        result_df = combined_df.drop_duplicates()
+        # Calculate profit and loss and Real Multiple (can be inaccurate in AngelList)
+        result_a = result_df.copy()
+        result_a["Profit"] = result_a["Realized Value"] - result_a["Invested"]
+        result_a['Real Multiple'] = result_a['Realized Value']/result_a['Invested']
+        result_sorted = result_a.sort_values(by='Real Multiple', ascending=False)
+
+        # reorder some columns
+        # insert Multiple after and remove the prior position 
+        name_column_index = result_sorted.columns.get_loc('Company/Fund')
+        result_sorted.insert(name_column_index+1, 'Lead', result_sorted.pop('Lead'))
+        result_sorted.insert(name_column_index+1, 'Profit', result_sorted.pop('Profit'))
+        result_sorted.insert(name_column_index+1, 'Real Multiple', result_sorted.pop('Real Multiple'))
+
+       # Neatly format everything
+        st.data_editor(
+            result_sorted, 
+            column_config= {
+                "Real Multiple": st.column_config.NumberColumn(
+                    "Multiple", help="Multiple expressed as Realized value / invested amount", format="%.2f x"
+                ), 
+                "Multiple": st.column_config.NumberColumn(
+                    "AL Multiple", help="Multiple as originally recored by AngelList system", format="%.2f x"
+                ),
+                "Invested": st.column_config.NumberColumn(
+                    "Invested", help="Dollars invested (rounded to nearest whole number)", format="$%.0f"
+                ), 
+                "Net Value": st.column_config.NumberColumn(
+                    "Net Value", help="Total value including realised and unrealized (rounded to nearest whole number)", format="$%.0f"
+                ),
+                "Proft": st.column_config.NumberColumn(
+                    "Profit", help="Realized value less Invested Value", format="$%.0f"
+                ), 
+                "Unrealized Value": st.column_config.NumberColumn(
+                    "Unreal $", help="Unrealized value of the investment as reported by the deal lead (rounded to nearest whole number)", format="$%.0f"
+                ), 
+                "Realized Value": st.column_config.NumberColumn(
+                    "$ Received", help="Realized value as reported by AngelList (rounded to nearest whole number)", format="$%.0f"
                 ) 
             },
             hide_index=True,
