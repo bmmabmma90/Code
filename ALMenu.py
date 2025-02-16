@@ -1,5 +1,6 @@
 # AL_Menu
 # Streamlit menu selection and front end for AngelList
+# Needs to handle a range of things better
 
 import streamlit as st
 import pandas as pd
