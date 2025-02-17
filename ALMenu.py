@@ -10,7 +10,7 @@ import squarify
 import numpy as np
 
 st.set_page_config(layout="wide")
-st.title("AngelList Startup Data Analyser v0.1")
+st.title("AngelList Startup Data Analyser")
 
 # Sidebar for the menu
 with st.sidebar:
@@ -253,8 +253,6 @@ elif option == "Top Investments":
         # Get the top X investments
         top_X_num = sorted_df.head(top_filter)
 
-        st.write("Breakpoint 0")
-
         # Merge the cleaned dataset with the sample dataset using 'Company/Fund' as the key
         if st.session_state.has_enhanced_data_file:
             enhanced_df = pd.merge(top_X_num, st.session_state.df2, on='Company/Fund', how='left')
@@ -286,23 +284,6 @@ elif option == "Top Investments":
                 hide_index=True,
             )
         else :
-            st.write("Breakpoint 1 - got here")
-            # Show a tree graph that looks nice
-            # Calculate sizes based on Net Value
-            sizes = top_X_num['Net Value']
-            labels = [f"{company}\
-            ({multiple:.1f}x)" for company, multiple in zip(top_X_num['Company/Fund'], top_X_num['Multiple'])]
-            colors = plt.cm.viridis(np.linspace(0, 0.8, len(top_X_num)))
-
-            st.write("Breakpoint 2 - got here")
-            # Create the plot
-            plt.figure(figsize=(12, 8))
-            squarify.plot(sizes=sizes, label=labels, color=colors, alpha=0.8, text_kwargs={'fontsize':10})
-            plt.axis('off')
-            plt.title('Investment Treemap (Size by Net Value, Labels show Multiple)', pad=20)
-            plt.tight_layout()
-            st.pyplot(plt)
-
             # Data structure and interactive data
             st.data_editor(
                 top_X_num, 
@@ -325,7 +306,20 @@ elif option == "Top Investments":
                 },
                 hide_index=True,
             )
+            # Show a tree graph that looks nice
+            # Calculate sizes based on Net Value
+            sizes = top_X_num['Net Value']
+            labels = [f"{company}\
+            ({multiple:.1f}x)" for company, multiple in zip(top_X_num['Company/Fund'], top_X_num['Multiple'])]
+            colors = plt.cm.viridis(np.linspace(0, 0.8, len(top_X_num)))
 
+            # Create the plot
+            plt.figure(figsize=(12, 8))
+            squarify.plot(sizes=sizes, label=labels, color=colors, alpha=0.8, text_kwargs={'fontsize':10})
+            plt.axis('off')
+            plt.title('Investment Treemap (Size by Net Value, Labels show Multiple)', pad=20)
+            plt.tight_layout()
+            st.pyplot(plt)
     else:
         st.write("Please Load Data file first before proceeding")  
 elif option == "Lead Stats":        
