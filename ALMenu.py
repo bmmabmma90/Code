@@ -4,8 +4,13 @@
 
 import streamlit as st
 import pandas as pd
+from matplotlib import pyplot as plt
+import seaborn as sns
+import squarify
+import numpy as np
 
-st.title("AngelList Startup Data Analyser")
+st.set_page_config(layout="wide")
+st.title("AngelList Startup Data Analyser v0.1")
 
 # Sidebar for the menu
 with st.sidebar:
@@ -248,11 +253,11 @@ elif option == "Top Investments":
         # Get the top X investments
         top_X_num = sorted_df.head(top_filter)
 
+        st.write("Breakpoint 0")
+
         # Merge the cleaned dataset with the sample dataset using 'Company/Fund' as the key
         if st.session_state.has_enhanced_data_file:
             enhanced_df = pd.merge(top_X_num, st.session_state.df2, on='Company/Fund', how='left')
-#           st.write(enhanced_df)
-            
             st.data_editor(
                 enhanced_df, 
                 column_config= {
@@ -281,6 +286,24 @@ elif option == "Top Investments":
                 hide_index=True,
             )
         else :
+            st.write("Breakpoint 1 - got here")
+            # Show a tree graph that looks nice
+            # Calculate sizes based on Net Value
+            sizes = top_X_num['Net Value']
+            labels = [f"{company}\
+            ({multiple:.1f}x)" for company, multiple in zip(top_X_num['Company/Fund'], top_X_num['Multiple'])]
+            colors = plt.cm.viridis(np.linspace(0, 0.8, len(top_X_num)))
+
+            st.write("Breakpoint 2 - got here")
+            # Create the plot
+            plt.figure(figsize=(12, 8))
+            squarify.plot(sizes=sizes, label=labels, color=colors, alpha=0.8, text_kwargs={'fontsize':10})
+            plt.axis('off')
+            plt.title('Investment Treemap (Size by Net Value, Labels show Multiple)', pad=20)
+            plt.tight_layout()
+            st.pyplot(plt)
+
+            # Data structure and interactive data
             st.data_editor(
                 top_X_num, 
                 column_config= {
@@ -350,7 +373,19 @@ elif option == "Lead Stats":
             },
             hide_index=True,
         )
+        # Calculate sizes based on Net Value
+        sizes = top_X_num['Net Value']
+        labels = [f"{company}\
+        ({multiple:.1f}x)" for company, multiple in zip(top_X_num['Company/Fund'], top_X_num['Multiple'])]
+        colors = plt.cm.viridis(np.linspace(0, 0.8, len(top_X_num)))
 
+        #Create the plot
+        plt.figure(figsize=(12, 8))
+        squarify.plot(sizes=sizes, label=labels, color=colors, alpha=0.8, text_kwargs={'fontsize':10})
+        plt.axis('off')
+        plt.title('Investment Treemap (Size by Net Value, Labels show Multiple)', pad=20)
+        plt.tight_layout()
+        st.pyplot(plt)
         # Display the top X investments
 #        with st.container(height=300):
 #            st.write(top_X_num)
@@ -472,9 +507,6 @@ elif option == "Graphs":
         # Load the data from the session state
         df = st.session_state.df
 
-        from matplotlib import pyplot as plt
-        import seaborn as sns
-
         # Grab our data
         df = st.session_state.df
 
@@ -483,33 +515,33 @@ elif option == "Graphs":
 
         # 1. Distribution of Multiples > 1
         data_mult = df[df['Multiple'] > 1]['Multiple'].dropna()
-        plot = sns.histplot(data=data_mult, bins=20, color='skyblue')
-        plot.set_title('Distribution of Investment Multiples (>1x)')
-        plot.set_xlabel('Multiple')
-        plot.set_ylabel('Count')
-        st.pyplot(plot.get_figure())
+        plt = sns.histplot(data=data_mult, bins=20, color='skyblue')
+        plt.set_title('Distribution of Investment Multiples (>1x)')
+        plt.set_xlabel('Multiple')
+        plt.set_ylabel('Count')
+        st.pyplot(plt.get_figure())
 
         # 2. Distribution of Investment Amounts
-        plot = sns.histplot(data=df['Invested'].dropna(), bins=20, color='salmon')
-        plot.set_title('Distribution of Investment Amounts')
-        plot.set_xlabel('Investment Amount ($)')
-        plot.set_ylabel('Count')
-        st.pyplot(plot.get_figure())
+        plt = sns.histplot(data=df['Invested'].dropna(), bins=20, color='salmon')
+        plt.set_title('Distribution of Investment Amounts')
+        plt.set_xlabel('Investment Amount ($)')
+        plt.set_ylabel('Count')
+        st.pyplot(plt.get_figure())
 
         # 3. Investment Amount vs Multiple (for multiples > 1)
         scatter_df = df[(df['Multiple'] > 1) & (df['Invested'].notnull())]
-        plot = sns.scatterplot(data=scatter_df, x='Invested', y='Multiple', color='purple', alpha=0.6)
-        plot.set_title('Investment Amount vs Multiple')
-        plot.set_xlabel('Investment Amount ($)')
-        plot.set_ylabel('Multiple')
-        st.pyplot(plot.get_figure())
+        plt = sns.scatterplot(data=scatter_df, x='Invested', y='Multiple', color='purple', alpha=0.6)
+        plt.set_title('Investment Amount vs Multiple')
+        plt.set_xlabel('Investment Amount ($)')
+        plt.set_ylabel('Multiple')
+        st.pyplot(plt.get_figure())
 
         # 4. Pie chart of Lead summary for Multiples > 2
         high_multiple_deals = df[df['Multiple'] > 2]
         lead_summary = high_multiple_deals['Lead'].value_counts()
-        plot.pie(lead_summary, labels=lead_summary.index, autopct='%1.1f%%', startangle=90, colors=sns.color_palette('pastel'))
-        plot.set_title('Lead Summary for Multiples > 2')
-        st.pyplot(plot.get_figure())
+        plt.pie(lead_summary, labels=lead_summary.index, autopct='%1.1f%%', startangle=90, colors=sns.color_palette('pastel'))
+        plt.set_title('Lead Summary for Multiples > 2')
+        st.pyplot(plt.get_figure())
 
         # Print some key statistics
         st.write("Average Multiple (>1x): {:.2f}".format(data_mult.mean()))
