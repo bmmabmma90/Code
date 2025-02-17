@@ -5,14 +5,14 @@
 import streamlit as st
 import pandas as pd
 
-st.title("AngelList Startup Data Analyser - v0.1")
+st.title("AngelList Startup Data Analyser")
 
 # Sidebar for the menu
 with st.sidebar:
     st.header("Menu")
     option = st.selectbox(
         "Choose an option:",
-        ("Load Data", "Stats", "Top Investments", "Realized", "Lead Stats", "Leads no markups", "Graphs")
+        ("About", "Load Data", "Stats", "Top Investments", "Realized", "Lead Stats", "Leads no markups", "Graphs")
     )
 
 # st.header("Output")
@@ -30,7 +30,27 @@ if 'net_sum' not in st.session_state:
     st.session_state.net_sum = 0
 
 # Perform actions based on the selected option
-if option == "Load Data":
+if option == "About" :
+    st.subheader("About", divider=True)
+    multi = '''AngelList's investor focused data analysis is somewhat limited. This program aims 
+    to make it easier for investors to get insight from their :red[AngelList] data and to be able to perform ad hoc 
+    analysis to inform their future investing decisions.
+
+    The program takes in up to two data sources in the Load menu item. The first is an export of :red[AngelList] data 
+    which you can generate from the Portfolio page (-->select Export CSV). This is all you need to process your data.
+
+    **Advanced**
+    
+    The second (and optional file) is a .CSV formatted file you 
+    can make to store additional data that isn't stored in :red[AngelList] or that is not readily accessible in the export. The 
+    of this second file must be:
+
+    ! Any comments or version you want to include - [this first line is ignored] 
+    Company/Fund  URL  AngelList URL   Comment   Other fields
+    '''
+    st.markdown(multi)
+
+elif option == "Load Data":
     st.subheader("Load in data file(s) for processing", divider=True)
     
     # Display if already loaded and button not pressed or where data hasn't been loaded
