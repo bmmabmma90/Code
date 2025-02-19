@@ -125,6 +125,8 @@ elif option == "Load Data":
         #.   value isn't known in a new column called "Unknown Value"
         # insert in a specific order for ease of reference
         df.insert(3, "Valuation Unknown", False)
+        num_locked = 0
+        total_invested_locked = 0
         for index, row in df.iterrows():
             original_value = row['Unrealized Value']
             if original_value == "Locked" :
@@ -132,6 +134,8 @@ elif option == "Load Data":
                 df.loc[index, "Valuation Unknown"] = True
                 df.loc[index, "Net Value"] = 0
                 df.loc[index, "Multiple"] = 0
+                num_locked+=1
+                total_invested_locked+= row['Invested']
 
         # 2.a.2 Move some columns 
         name_column_index = df.columns.get_loc('Company/Fund')
@@ -159,6 +163,7 @@ elif option == "Load Data":
                 num_dead=num_dead+1
             if (row['Multiple']) > 1:
                 num_greater_1x_multiple = num_greater_1x_multiple + 1
+        
 
         # 2.d. Calculate the sum of the 'Invested' column and the 'Net Value' column
         try:
@@ -192,20 +197,27 @@ elif option == "Load Data":
         st.session_state.total_investments = total_investments
         st.session_state.num_leads = num_leads
         st.session_state.num_zero_value_leads = num_zero_value_leads
+        st.session_state.num_locked = num_locked
+        st.session_state.total_invested_locked = total_invested_locked
 
 elif option == "Stats":
     st.subheader("Investment Statistics", divider=True)
-    st.markdown("Show statistics across the portfolio")
-
+    st.markdown("Show statistics across the portfolio.")
+    # Write all the outputs to the screen
+    top_mult = st.slider("Locked Investment Multiplier (x)",0.8,1.5,1.1)   
+    
     if st.session_state.has_data_file:
-          # Write all the outputs to the screen
+        # Write all the outputs to the screen
         def format_currency(amount) :
             return '${:,.2f}'.format(amount)
+        # Calculate the total value using an estimate
+        total_value = top_mult*st.session_state.total_invested_locked
 
         a, b = st.columns(2)
         c, d = st.columns(2)
         e, f, g = st.columns(3)
-        h, i = st.columns(2)
+        h, i, j = st.columns(3)
+        k, l = st.columns(2)
 
         a.metric(label="Investments", value=st.session_state.total_investments, border=True)
         b.metric(label="Companies", value=st.session_state.num_uniques, border=True)
@@ -214,8 +226,11 @@ elif option == "Stats":
         e.metric(label="Invested $",value=format_currency(st.session_state.invested_sum), border=True)
         f.metric(label="Net Value $",value=format_currency(st.session_state.net_sum), border=True)
         g.metric(label="Realised $",value=format_currency(st.session_state.realized_sum), border=True)
-        h.metric(label="Syndicates Invested",value=st.session_state.num_leads, border=True)
-        i.metric(label="Syndicates no value info",value=st.session_state.num_zero_value_leads, border=True)
+        h.metric(label="# Locked",value=st.session_state.num_locked, border=True)
+        i.metric(label="Locked $",value=format_currency(st.session_state.total_invested_locked), border=True)
+        j.metric(label="Total Estimated $",value=format_currency(total_value), border=True)
+        k.metric(label="Syndicates Invested",value=st.session_state.num_leads, border=True)
+        l.metric(label="Syndicates no value info",value=st.session_state.num_zero_value_leads, border=True)
     else:
         st.write("Please Load Data file first before proceeding")  
 #        screen_display = {
@@ -434,14 +449,15 @@ elif option == "Realized":
 
         # prompt: Using dataframe df: Write code that finds all the values in df that have Realized Value > 0 or that have Status = Realized or Status == Dead
         # Find rows where 'Realized Value' is greater than 0
-        realized_value_gt_0 = df[df['Realized Value'] > 0]
+        #realized_value_gt_0 = df[df['Realized Value'] > 0]
         # Find rows where 'Status' is 'Realized' or 'Dead'
         status_realized_or_dead = df[df['Status'].isin(['Realized', 'Dead'])]
         # Combine the two sets of rows using concatenation
-        combined_df = pd.concat([realized_value_gt_0, status_realized_or_dead])
+        #combined_df = pd.concat([realized_value_gt_0, status_realized_or_dead])
         # Drop duplicate rows to avoid redundancy
-        result_df = combined_df.drop_duplicates()
+        #result_df = combined_df.drop_duplicates()
         # Calculate profit and loss and Real Multiple (can be inaccurate in AngelList)
+        result_df = status_realized_or_dead
         result_a = result_df.copy()
         result_a["Profit"] = result_a["Realized Value"] - result_a["Invested"]
         result_a['Real Multiple'] = result_a['Realized Value']/result_a['Invested']
@@ -457,6 +473,10 @@ elif option == "Realized":
        # Neatly format everything
         if st.session_state.has_enhanced_data_file:
             enhanced_df = pd.merge(result_sorted, st.session_state.df2, on='Company/Fund', how='left')
+            # enhanced needs to be resorted too
+            enhanced_df.insert(name_column_index+1, 'Comment', result_sorted.pop('Comment'))
+            enhanced_df.insert(name_column_index+1, 'AngelList URL', result_sorted.pop('AngelList URL'))
+
             st.data_editor(
                 enhanced_df, 
                 column_config= {
@@ -466,7 +486,7 @@ elif option == "Realized":
                     "AngelList URL": st.column_config.LinkColumn(
                         "Website", help="The link to your AngelList investment record", display_text="AL Link"
                     ),
-                                       "Real Multiple": st.column_config.NumberColumn(
+                    "Real Multiple": st.column_config.NumberColumn(
                         "Multiple", help="Multiple expressed as Realized value / invested amount", format="%.2f x"
                     ), 
                     "Multiple": st.column_config.NumberColumn(
