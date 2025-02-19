@@ -266,7 +266,7 @@ elif option == "Top Investments":
                         "Website", help="The link to your AngelList investment record", display_text="AL Link"
                     ),
                     "Multiple": st.column_config.NumberColumn(
-                        "Multiple", help="Multiple expressed as total value / invested amount", format="%.1f x"
+                        "Multiple", help="Multiple expressed as total value / invested amount", format="%.2f x"
                     ),
                     "Invested": st.column_config.NumberColumn(
                         "Invested", help="Dollars invested (rounded to nearest whole number)", format="$%.0f"
@@ -306,20 +306,20 @@ elif option == "Top Investments":
                 },
                 hide_index=True,
             )
-            # Show a tree graph that looks nice
-            # Calculate sizes based on Net Value
-            sizes = top_X_num['Net Value']
-            labels = [f"{company}\
-            ({multiple:.1f}x)" for company, multiple in zip(top_X_num['Company/Fund'], top_X_num['Multiple'])]
-            colors = plt.cm.viridis(np.linspace(0, 0.8, len(top_X_num)))
+        # Show a tree graph that looks nice
+        # Calculate sizes based on Net Value
+        sizes = top_X_num['Net Value']
+        labels = [f"{company}\
+        ({multiple:.1f}x)" for company, multiple in zip(top_X_num['Company/Fund'], top_X_num['Multiple'])]
+        colors = plt.cm.viridis(np.linspace(0, 0.8, len(top_X_num)))
 
-            # Create the plot
-            plt.figure(figsize=(12, 8))
-            squarify.plot(sizes=sizes, label=labels, color=colors, alpha=0.8, text_kwargs={'fontsize':10})
-            plt.axis('off')
-            plt.title('Investment Treemap (Size by Net Value, Labels show Multiple)', pad=20)
-            plt.tight_layout()
-            st.pyplot(plt)
+        # Create the plot
+        plt.figure(figsize=(12, 8))
+        squarify.plot(sizes=sizes, label=labels, color=colors, alpha=0.8, text_kwargs={'fontsize':10})
+        plt.axis('off')
+        plt.title('Investment Treemap (Size by Net Value, Labels show Multiple)', pad=20)
+        plt.tight_layout()
+        st.pyplot(plt)
     else:
         st.write("Please Load Data file first before proceeding")  
 elif option == "Lead Stats":        
@@ -367,28 +367,17 @@ elif option == "Lead Stats":
             },
             hide_index=True,
         )
-        # Calculate sizes based on Net Value
-        sizes = top_X_num['Net Value']
-        labels = [f"{company}\
-        ({multiple:.1f}x)" for company, multiple in zip(top_X_num['Company/Fund'], top_X_num['Multiple'])]
-        colors = plt.cm.viridis(np.linspace(0, 0.8, len(top_X_num)))
-
-        #Create the plot
-        plt.figure(figsize=(12, 8))
-        squarify.plot(sizes=sizes, label=labels, color=colors, alpha=0.8, text_kwargs={'fontsize':10})
-        plt.axis('off')
-        plt.title('Investment Treemap (Size by Net Value, Labels show Multiple)', pad=20)
-        plt.tight_layout()
-        st.pyplot(plt)
-        # Display the top X investments
 #        with st.container(height=300):
 #            st.write(top_X_num)
     else:
         st.write("Please Load Data file first before proceeding")  
 
 elif option == "Leads no markups":
-    st.subheader("Leads with no markups", divider=True)
-    st.markdown("Show all the leads that have no markups recorded in AngelList")
+    st.subheader("Leads with no disclosed markups", divider=True)
+    st.markdown("Show all the leads that have no markups recorded in AngelList")            
+    
+    # Show the stats regarding Syndicate LEads
+    top_filter = st.slider("Show how many",1,50,5)   
     if st.session_state.has_data_file:
         # Load the data from the session state
         df = st.session_state.df
@@ -412,6 +401,9 @@ elif option == "Leads no markups":
         result = result.sort_values(by='locked_count', ascending=False)
         # drop superfluous columns
         result  = result.drop(columns=['locked_count', 'locked_percentage'])
+        
+        # Take top values
+        result = result.nlargest(top_filter, 'Lead')
         # Neatly format everything
         st.data_editor(
             result, 
@@ -463,35 +455,70 @@ elif option == "Realized":
         result_sorted.insert(name_column_index+1, 'Real Multiple', result_sorted.pop('Real Multiple'))
 
        # Neatly format everything
-        st.data_editor(
-            result_sorted, 
-            column_config= {
-                "Real Multiple": st.column_config.NumberColumn(
-                    "Multiple", help="Multiple expressed as Realized value / invested amount", format="%.2f x"
-                ), 
-                "Multiple": st.column_config.NumberColumn(
-                    "AL Multiple", help="Multiple as originally recored by AngelList system", format="%.2f x"
-                ),
-                "Invested": st.column_config.NumberColumn(
-                    "Invested", help="Dollars invested (rounded to nearest whole number)", format="$%.0f"
-                ), 
-                "Net Value": st.column_config.NumberColumn(
-                    "Net Value", help="Total value including realised and unrealized (rounded to nearest whole number)", format="$%.0f"
-                ),
-                "Proft": st.column_config.NumberColumn(
-                    "Profit", help="Realized value less Invested Value", format="$%.0f"
-                ), 
-                "Unrealized Value": st.column_config.NumberColumn(
-                    "Unreal $", help="Unrealized value of the investment as reported by the deal lead (rounded to nearest whole number)", format="$%.0f"
-                ), 
-                "Realized Value": st.column_config.NumberColumn(
-                    "$ Received", help="Realized value as reported by AngelList (rounded to nearest whole number)", format="$%.0f"
-                ) 
-            },
-            hide_index=True,
-        )
-#        with st.container(height=300):
-#            st.write(result)
+        if st.session_state.has_enhanced_data_file:
+            enhanced_df = pd.merge(result_sorted, st.session_state.df2, on='Company/Fund', how='left')
+            st.data_editor(
+                enhanced_df, 
+                column_config= {
+                    "URL": st.column_config.LinkColumn(
+                        "Website", help="The link to the website for the company"
+                    ),
+                    "AngelList URL": st.column_config.LinkColumn(
+                        "Website", help="The link to your AngelList investment record", display_text="AL Link"
+                    ),
+                                       "Real Multiple": st.column_config.NumberColumn(
+                        "Multiple", help="Multiple expressed as Realized value / invested amount", format="%.2f x"
+                    ), 
+                    "Multiple": st.column_config.NumberColumn(
+                        "AL Multiple", help="Multiple as originally recored by AngelList system", format="%.2f x"
+                    ),
+                    "Invested": st.column_config.NumberColumn(
+                        "Invested", help="Dollars invested (rounded to nearest whole number)", format="$%.0f"
+                    ), 
+                    "Net Value": st.column_config.NumberColumn(
+                        "Net Value", help="Total value including realised and unrealized (rounded to nearest whole number)", format="$%.0f"
+                    ),
+                    "Proft": st.column_config.NumberColumn(
+                        "Profit", help="Realized value less Invested Value", format="$%.0f"
+                    ), 
+                    "Unrealized Value": st.column_config.NumberColumn(
+                        "Unreal $", help="Unrealized value of the investment as reported by the deal lead (rounded to nearest whole number)", format="$%.0f"
+                    ), 
+                    "Realized Value": st.column_config.NumberColumn(
+                        "$ Received", help="Realized value as reported by AngelList (rounded to nearest whole number)", format="$%.0f"
+                    ) 
+                },
+                hide_index=True,
+            )
+        else :
+            # Data structure and interactive data
+            st.data_editor(
+                result_sorted, 
+                column_config= {
+                    "Real Multiple": st.column_config.NumberColumn(
+                        "Multiple", help="Multiple expressed as Realized value / invested amount", format="%.2f x"
+                    ), 
+                    "Multiple": st.column_config.NumberColumn(
+                        "AL Multiple", help="Multiple as originally recored by AngelList system", format="%.2f x"
+                    ),
+                    "Invested": st.column_config.NumberColumn(
+                        "Invested", help="Dollars invested (rounded to nearest whole number)", format="$%.0f"
+                    ), 
+                    "Net Value": st.column_config.NumberColumn(
+                        "Net Value", help="Total value including realised and unrealized (rounded to nearest whole number)", format="$%.0f"
+                    ),
+                    "Proft": st.column_config.NumberColumn(
+                        "Profit", help="Realized value less Invested Value", format="$%.0f"
+                    ), 
+                    "Unrealized Value": st.column_config.NumberColumn(
+                        "Unreal $", help="Unrealized value of the investment as reported by the deal lead (rounded to nearest whole number)", format="$%.0f"
+                    ), 
+                    "Realized Value": st.column_config.NumberColumn(
+                        "$ Received", help="Realized value as reported by AngelList (rounded to nearest whole number)", format="$%.0f"
+                    ) 
+                },
+                hide_index=True,
+            )
     else:
         st.write("Please Load Data file first before proceeding")
 elif option == "Graphs":
