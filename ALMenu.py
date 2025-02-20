@@ -123,9 +123,9 @@ elif option == "Load Data":
         df.info(verbose=True)
 
         # 2.a. Normalize the data by converting them to numbers
-        df["Realized Value"] = df["Realized Value"].replace('[^\d.]', '', regex=True).astype(float)   
-        df["Invested"] = df["Invested"].replace("[^\d.]", "", regex=True).astype(float)   
-        df["Multiple"] = df["Multiple"].replace("[^\d.]", "", regex=True).astype(float)   
+        df["Realized Value"] = df["Realized Value"].replace(r'[^\d.]', '', regex=True).astype(float)   
+        df["Invested"] = df["Invested"].replace(r'[^\d.]', '', regex=True).astype(float)   
+        df["Multiple"] = df["Multiple"].replace(r'[^\d.]', '', regex=True).astype(float)   
         
         # 2.b. Special treatment of Unrealized Value because we want to flag where we don't know the actual value
         # We'll iterate through and force "Unrealized" and "Net Value" to zero AFTER we have made a note that the
@@ -147,8 +147,8 @@ elif option == "Load Data":
         # Now convert whole columns for Unrealized Value and Net Value now that have gathered which are locked (Forcing
         # Locked to zero
 
-        df["Net Value"] = df["Net Value"].replace("[^\d.]", "", regex=True).astype(float) 
-        df["Unrealized Value"] = df["Unrealized Value"].replace("[^\d.]", "", regex=True).astype(float) 
+        df["Net Value"] = df["Net Value"].replace(r'[^\d.]', '', regex=True).astype(float) 
+        df["Unrealized Value"] = df["Unrealized Value"].replace(r'[^\d.]', '', regex=True).astype(float) 
 #        df["Net Value"] = df["Net Value"].str.extract(r'([\d,.]+)')[0].str.replace(',', '', regex=False).astype(float)
 #        df["Unrealized Value"] = df["Unrealized Value"].str.extract(r'([\d,.]+)')[0].str.replace(',', '', regex=False).astype(float)
 
@@ -210,7 +210,7 @@ elif option == "Load Data":
 
 elif option == "Stats":
     st.subheader("Investment Statistics", divider=True)
-    st.markdown("Show statistics across the portfolio.")
+    st.markdown("Show statistics across the portfolio.  NB: To calculate the correct value for the locked investment slider you can look up the portfolio value in AngelList then subtract the Net Value figure below, when you set the slider so that the Total Estimated $ is equal to the value in AngelList then you know the overall multiple of Locked Investments")
     # Write all the outputs to the screen
     top_mult = st.slider("Locked Investment Multiplier (x)",0.8,1.5,1.1)   
     
@@ -332,8 +332,7 @@ elif option == "Top Investments":
         # Show a tree graph that looks nice
         # Calculate sizes based on Net Value
         sizes = top_X_num['Net Value']
-        labels = [f"{company}\
-        ({multiple:.1f}x)" for company, multiple in zip(top_X_num['Company/Fund'], top_X_num['Multiple'])]
+        labels = [f"{company}\n({multiple:.1f}x)" for company, multiple in zip(top_X_num['Company/Fund'], top_X_num['Multiple'])]
         colors = plt.cm.viridis(np.linspace(0, 0.8, len(top_X_num)))
 
         # Create the plot
