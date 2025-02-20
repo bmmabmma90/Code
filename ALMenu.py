@@ -37,22 +37,22 @@ if 'net_sum' not in st.session_state:
 # Perform actions based on the selected option
 if option == "About" :
     st.subheader("About", divider=True)
-    multi = '''AngelList's investor focused data analysis is somewhat limited. This program aims 
-    to make it easier for investors to get insight from their :red[AngelList] data and to be able to perform ad hoc 
-    analysis to inform their future investing decisions.
+    multi = '''AngelLists investor focused data analysis is somewhat limited. This program aims 
+to make it easier for investors to get insight from their :red[AngelList] data and to be able to perform ad hoc 
+analysis to inform their future investing decisions.
 
-    The program takes in up to two data sources in the Load menu item. The first is an export of :red[AngelList] data 
-    which you can generate from the Portfolio page (-->select Export CSV). This is all you need to process your data.
-
-    **Advanced**
+The program takes in up to two data sources in the Load menu item. The first is an export of :red[AngelList] data 
+which you can generate from the :blue-background[Portfolio page] (-->select Export CSV). This is all you need to process your data.
     
-    The second (and optional file) is a .CSV formatted file you 
-    can make to store additional data that isn't stored in :red[AngelList] or that is not readily accessible in the export. The 
-    of this second file must be:
+**Advanced**    
 
-    ! Any comments or version you want to include - [this first line is ignored] 
+The second (and optional file) is a .CSV formatted file you 
+can make to store additional data that isn't stored in :red[AngelList] or that is not readily accessible in the export. The 
+format of this second file must be:
+    
+    ! Any comments or version you want to include - this line is ignored for processing 
     Company/Fund  URL  AngelList URL   Comment   Other fields
-    '''
+'''
     st.markdown(multi)
 
 elif option == "Load Data":
@@ -120,22 +120,37 @@ elif option == "Load Data":
         unique_names = df["Company/Fund"].unique()
         num_uniques = len(unique_names)
 
-        # 2.a. Special treatment of Unrealized Value because we want to flag where we don't know the actual value
+        df.info(verbose=True)
+
+        # 2.a. Normalize the data by converting them to numbers
+        df["Realized Value"] = df["Realized Value"].replace('[^\d.]', '', regex=True).astype(float)   
+        df["Invested"] = df["Invested"].replace("[^\d.]", "", regex=True).astype(float)   
+        df["Multiple"] = df["Multiple"].replace("[^\d.]", "", regex=True).astype(float)   
+        
+        # 2.b. Special treatment of Unrealized Value because we want to flag where we don't know the actual value
         # We'll iterate through and force "Unrealized" and "Net Value" to zero AFTER we have made a note that the
         #.   value isn't known in a new column called "Unknown Value"
         # insert in a specific order for ease of reference
         df.insert(3, "Valuation Unknown", False)
+
         num_locked = 0
         total_invested_locked = 0
         for index, row in df.iterrows():
             original_value = row['Unrealized Value']
             if original_value == "Locked" :
-                df.loc[index, "Unrealized Value"] = 0
                 df.loc[index, "Valuation Unknown"] = True
+                df.loc[index, "Unrealized Value"] = 0
                 df.loc[index, "Net Value"] = 0
                 df.loc[index, "Multiple"] = 0
-                num_locked+=1
-                total_invested_locked+= row['Invested']
+                num_locked += 1
+                total_invested_locked += df.loc[index, "Invested"]
+        # Now convert whole columns for Unrealized Value and Net Value now that have gathered which are locked (Forcing
+        # Locked to zero
+
+        df["Net Value"] = df["Net Value"].replace("[^\d.]", "", regex=True).astype(float) 
+        df["Unrealized Value"] = df["Unrealized Value"].replace("[^\d.]", "", regex=True).astype(float) 
+#        df["Net Value"] = df["Net Value"].str.extract(r'([\d,.]+)')[0].str.replace(',', '', regex=False).astype(float)
+#        df["Unrealized Value"] = df["Unrealized Value"].str.extract(r'([\d,.]+)')[0].str.replace(',', '', regex=False).astype(float)
 
         # 2.a.2 Move some columns 
         name_column_index = df.columns.get_loc('Company/Fund')
@@ -144,13 +159,6 @@ elif option == "Load Data":
         name_column_index = df.columns.get_loc('Invested')
         # insert Multiple after and remove the prior position 
         df.insert(name_column_index+1, 'Net Value', df.pop('Net Value'))
- 
-        # 2.b. Normalize the data by converting the to numbers
-        df["Realized Value"] = df["Realized Value"].replace("[\$,]", "", regex=True).astype(float)
-        df["Unrealized Value"] = df["Unrealized Value"].replace("[\$,]", "", regex=True).astype(float)
-        df["Invested"] = df["Invested"].replace("[\$,]", "", regex=True).astype(float)
-        df["Net Value"] = df["Net Value"].replace("[\$,]", "", regex=True).astype(float)
-        df["Multiple"] = df["Multiple"].replace("[\$,]", "", regex=True).astype(float)
 
         # 2.c. Check if the company is actually dead ie Valuation Unknown is not True but Net Value = 0
         # Also count the number where multiple > 1
@@ -211,7 +219,7 @@ elif option == "Stats":
         def format_currency(amount) :
             return '${:,.2f}'.format(amount)
         # Calculate the total value using an estimate
-        total_value = top_mult*st.session_state.total_invested_locked
+        total_value = top_mult * st.session_state.total_invested_locked + st.session_state.net_sum
 
         a, b = st.columns(2)
         c, d = st.columns(2)
@@ -392,7 +400,7 @@ elif option == "Leads no markups":
     st.markdown("Show all the leads that have no markups recorded in AngelList")            
     
     # Show the stats regarding Syndicate LEads
-    top_filter = st.slider("Show how many",1,50,5)   
+#    top_filter = st.slider("Show how many",1,50,5)   
     if st.session_state.has_data_file:
         # Load the data from the session state
         df = st.session_state.df
@@ -414,11 +422,11 @@ elif option == "Leads no markups":
         # Sort based on locked_percentage descending
         result = filtered_df.sort_values(by='locked_percentage', ascending=False)
         result = result.sort_values(by='locked_count', ascending=False)
+        
+ #       # Take top values
+ #       result = result.nlargest(top_filter, 'Lead')      
         # drop superfluous columns
         result  = result.drop(columns=['locked_count', 'locked_percentage'])
-        
-        # Take top values
-        result = result.nlargest(top_filter, 'Lead')
         # Neatly format everything
         st.data_editor(
             result, 
@@ -548,22 +556,25 @@ elif option == "Graphs":
         # Load the data from the session state
         df = st.session_state.df
 
-        # Grab our data
-        df = st.session_state.df
-
         # set themes and sizes - note I couldn't display it neatly
         sns.set_theme()
+        # Set up the formatting and dimensions
+        # a, b = st.columns(2)
+        # width = 3
+        # height = 2
 
         # 1. Distribution of Multiples > 1
         data_mult = df[df['Multiple'] > 1]['Multiple'].dropna()
         plt = sns.histplot(data=data_mult, bins=20, color='skyblue')
+#        fig, ax = plt.subp.subplots(figsize=(width, height))
         plt.set_title('Distribution of Investment Multiples (>1x)')
         plt.set_xlabel('Multiple')
-        plt.set_ylabel('Count')
+        plt.set_ylabel('Count')    
         st.pyplot(plt.get_figure())
 
         # 2. Distribution of Investment Amounts
         plt = sns.histplot(data=df['Invested'].dropna(), bins=20, color='salmon')
+ #       fig, ax = plt.subplots(figsize=(width, height))
         plt.set_title('Distribution of Investment Amounts')
         plt.set_xlabel('Investment Amount ($)')
         plt.set_ylabel('Count')
