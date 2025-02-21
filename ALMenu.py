@@ -68,7 +68,7 @@ elif option == "Load Data":
     # Check if already loaded
 # Force load allows you to ignore the Load Data with specific data
     force_load = False
-    if force_load:
+    if force_load == True:
         df = pd.read_csv(r"/Users/deepseek/Downloads/ben-armstrong_angellist_investments_2025_02_21.csv", header=1, skip_blank_lines=True)
         st.session_state.has_data_file = True
         st.session_state.df = df
@@ -83,7 +83,7 @@ elif option == "Load Data":
         # Action 1: Load in Data
         uploaded_file = st.file_uploader("Choose the AngelList file in a CSV format", type="csv")
 
-    if not force_load and uploaded_file is not None:
+    if force_load == False and uploaded_file is not None:
         try:
             df = pd.read_csv(uploaded_file, header=1, skip_blank_lines=True)
             st.session_state.has_data_file = True
