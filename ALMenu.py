@@ -67,7 +67,7 @@ elif option == "Load Data":
     # Display if already loaded and button not pressed or where data hasn't been loaded
     # Check if already loaded
 # Force load allows you to ignore the Load Data with specific data
-    force_load = True
+    force_load = False
     if force_load:
         df = pd.read_csv(r"/Users/deepseek/Downloads/ben-armstrong_angellist_investments_2025_02_21.csv", header=1, skip_blank_lines=True)
         st.session_state.has_data_file = True
