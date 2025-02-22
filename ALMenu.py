@@ -30,7 +30,7 @@ with st.sidebar:
     if st.session_state.has_data_file:
         option = st.selectbox(
             "Choose an option:",
-            ("About", "Load Data", "Stats", "Top Investments", "Realized", "Lead Stats", "Leads no markups", "Graphs")
+            ("About", "Load Data", "Stats", "Top Investments", "Round", "Market", "Realized", "Lead Stats", "Leads no markups", "Graphs")
         )
     else:
         option = st.selectbox(
@@ -119,7 +119,7 @@ elif option == "Load Data":
     # Do all the data processing    
     # 1. Drop the data we don't analyse for easy display / debugging
         todrop = { 'Invest Date', 'Investment Entity',
-                'Investment Type', 'Round', 'Market', 'Fund Name', 'Allocation',
+                'Investment Type', 'Fund Name', 'Allocation', # 'Round', 'Market', 
                 'Instrument', 'Round Size', 'Valuation or Cap Type', 'Valuation or Cap',
                 'Discount', 'Carry', 'Share Class'}
         # Get the actual column names from the DataFrame
@@ -383,6 +383,133 @@ elif option == "Top Investments":
         st.pyplot(plt)
     else:
         st.write("Please Load Data file first before proceeding")  
+
+elif option == "Round":
+    # prompt: Create a pie graph of summarised data that is aggregated by Round and sums the Invested amount
+    st.subheader("Round Stats", divider=True)
+    st.markdown("Show statistics related to rounds of investment")
+    top_filter = st.slider("Show how many in graphs",1,50,10) 
+
+    # Group by 'Round' and sum 'Invested'
+    temp_df = st.session_state.df.copy()
+
+    temp_df["Increase"] = temp_df["Net Value"] - temp_df["Invested"]
+    grouped = temp_df.groupby("Round", as_index=False).agg({"Invested":"sum", "Increase":"sum"})
+    invested_sum = grouped["Invested"].sum()
+    value_sum = grouped[grouped["Increase"] > 0]["Increase"].sum()
+    grouped["Perc by Invested"] = grouped["Invested"]/invested_sum * 100 if invested_sum !=0 else 0
+    grouped["Perc by Increase"] = grouped["Increase"]/value_sum * 100 if invested_sum !=0 else 0
+
+    def show_top_X_increase_and_multiple(df, round_name):
+        round_df = df[df["Round"] == round_name].sort_values(by="Increase", ascending=False)
+        topX = 5
+        # Create a list to store the formatted strings
+        top_X_examples_list = []
+        for index, row in round_df.head(topX).iterrows():
+            company_fund = row["Company/Fund"]
+            real_multiple = row["Real Multiple"]
+            formatted_string = f"{company_fund} ({real_multiple:.2f}x)"
+            top_X_examples_list.append(formatted_string)
+
+        # Join the formatted strings with commas
+        top_X_examples = ", ".join(top_X_examples_list)
+        return top_X_examples
+
+    # Create a new column in the grouped dataframe to store the examples
+    grouped["Examples"] = ""
+
+    # Iterate through unique rounds and update the "Examples" column
+    for round_name in temp_df["Round"].unique():
+        examples = show_top_X_increase_and_multiple(temp_df, round_name)
+        grouped.loc[grouped["Round"] == round_name, "Examples"] = examples
+ 
+    st.write(grouped)
+
+    # Limited the data displayed
+    sorted_df = grouped.sort_values(by='Invested', ascending=False)
+    filtered_grouped = sorted_df.head(top_filter)
+
+    # Create the pie chart showing Invested
+    plt.figure(figsize=(8, 8))
+    plt.pie(filtered_grouped["Invested"], labels=filtered_grouped["Round"], autopct='%1.1f%%', startangle=90)
+    plt.title('Investment Amount by Round')
+    plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+    st.pyplot(plt)
+
+    # Create the pie chart showing Value
+    # set all values to 0 that are negative
+    grouped.loc[grouped["Increase"] < 0, "Increase"] = 0
+    # Limited the data displayed
+    sorted_df = grouped.sort_values(by='Increase', ascending=False)
+    filtered_grouped = sorted_df.head(top_filter)
+
+    plt.figure(figsize=(8, 8))
+    plt.pie(grouped["Increase"], labels=grouped["Round"], autopct='%1.1f%%', startangle=90)
+    plt.title('Value created by Round')
+    plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+    st.pyplot(plt)
+
+elif option == "Market":
+    st.subheader("Market Stats", divider=True)
+    st.markdown("Show statistics related to markets invested in")
+    top_filter = st.slider("Show how many in graphs",1,50,10) 
+
+    temp_df = st.session_state.df.copy()
+
+    temp_df["Increase"] = temp_df["Net Value"] - temp_df["Invested"]
+    grouped = temp_df.groupby("Market", as_index=False).agg({"Invested":"sum", "Increase":"sum"})
+    invested_sum = grouped["Invested"].sum()
+    value_sum = grouped[grouped["Increase"] > 0]["Increase"].sum()
+    grouped["Perc by Invested"] = grouped["Invested"]/invested_sum * 100 if invested_sum !=0 else 0
+    grouped["Perc by Increase"] = grouped["Increase"]/value_sum * 100 if invested_sum !=0 else 0
+
+    def show_top_X_increase_and_multiple(df, round_name):
+        round_df = df[df["Market"] == round_name].sort_values(by="Increase", ascending=False)
+        topX = 5
+        # Create a list to store the formatted strings
+        top_X_examples_list = []
+        for index, row in round_df.head(topX).iterrows():
+            company_fund = row["Company/Fund"]
+            real_multiple = row["Real Multiple"]
+            formatted_string = f"{company_fund} ({real_multiple:.2f}x)"
+            top_X_examples_list.append(formatted_string)
+
+        # Join the formatted strings with commas
+        top_X_examples = ", ".join(top_X_examples_list)
+        return top_X_examples
+
+    # Create a new column in the grouped dataframe to store the examples
+    grouped["Examples"] = ""
+
+    # Iterate through unique rounds and update the "Examples" column
+    for round_name in temp_df["Market"].unique():
+        examples = show_top_X_increase_and_multiple(temp_df, round_name)
+        grouped.loc[grouped["Market"] == round_name, "Examples"] = examples
+ 
+    st.write(grouped)
+
+    # Limited the data displayed
+    sorted_df = grouped.sort_values(by='Invested', ascending=False)
+    filtered_grouped = sorted_df.head(top_filter)
+
+    # Create the pie chart showing Invested
+    plt.figure(figsize=(8, 8))
+    plt.pie(filtered_grouped["Invested"], labels=filtered_grouped["Market"], autopct='%1.1f%%', startangle=90)
+    plt.title('Investment Amount by Market')
+    plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+    st.pyplot(plt)
+
+    # Create the pie chart showing Value
+    # set all values to 0 that are negative
+    grouped.loc[grouped["Increase"] < 0, "Increase"] = 0
+    sorted_df = grouped.sort_values(by='Increase', ascending=False)
+    filtered_grouped = sorted_df.head(top_filter)
+
+    plt.figure(figsize=(8, 8))
+    plt.pie(filtered_grouped["Increase"], labels=filtered_grouped["Market"], autopct='%1.1f%%', startangle=90)
+    plt.title('Value created by Market')
+    plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+    st.pyplot(plt)
 
 elif option == "Lead Stats":        
     st.subheader("Lead Stats", divider=True)
