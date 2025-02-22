@@ -157,15 +157,14 @@ elif option == "Load Data":
                 df.loc[index, "Valuation Unknown"] = True
                 df.loc[index, "Unrealized Value"] = 0
                 df.loc[index, "Net Value"] = 0
-                df.loc[index, "Multiple"] = 0
                 num_locked += 1
                 invested_locked += df.loc[index, "Invested"]
        
         # Now convert whole columns for Unrealized Value and Net Value now that have gathered which are locked (Forcing
         # Locked to zero
-
         df["Net Value"] = df["Net Value"].replace(r'[^\d.]', '', regex=True).astype(float) 
         df["Unrealized Value"] = df["Unrealized Value"].replace(r'[^\d.]', '', regex=True).astype(float) 
+        df['Real Multiple'] = (df['Realized Value']+df['Unrealized Value'])/df['Invested']
 
         # 2.a.2 Move some columns 
         name_column_index = df.columns.get_loc('Company/Fund')
@@ -175,55 +174,58 @@ elif option == "Load Data":
         # insert Multiple after and remove the prior position 
         df.insert(name_column_index+1, 'Net Value', df.pop('Net Value'))
 
-        # 2.c. Calculate all the values for realised and marked up investments
-        invested_realised_1x = 0
-        invested_realised_less1x = 0
-        invested_non_realised = 0  # Note the sum of these 3 things should be total_invested
-        value_realised_1x = 0
-        value_realised_less1x = 0  # Note the sum of these 2 things should be total_realised
-    #   invested_locked = 0
-        invested_showing = 0 # Note the sum of these 2 should be total_invested_live
-        value_markup = 0
-        value_not_markedup = 0
-        value_locked = 0 # Note the sum of these 3 should be total_value
-        num_greater_1x_multiple = 0
+        #2.c. Calculate all the summary values
+        # prompt: Filter the results to show only where Multiple > 1 and then create a completely new dataframe with a row called 'Multiple > 1' and as columns 'Count', 'Invested', 'Realized', 'UnRealized', 'Multiple', 'Percentage' have values that are the count of the number of results, the sum of the amount invested, the sum of the Realized, the sum of the Unrealized, the ratio of (UnRealised + Realised)/Invested, and a % that represents the ratio of the amount invested divided by the total sum of invested capital before the filter was applied
+        # Output: Count, %, Invested, Realized, UnRealized, Multiple
+        # We want to create the following slices of data:
+        # Totals - no Filter
+        # Realized at >=1x- Filtered: Status is Realized and Real Multiple >= 1
+        # Realized at <1x - Filtered: Status is Realized and Real Multiple <1
+        # Locked:         - Filtered: Valuation Unknown = True
+        # Marked Up:      - Filtered: Valuation Unknown is not True and Real Multiple >=1
+        # Not marked up:  - Filtered: Valuation Unknown is not True and Real Multiple < 1
+        # Check that sum of all but Totals = Totals
+        row_names = ['Totals', 'Realized >=1x', 'Realized <1x', 'Locked', 'Marked Up', 'Not Marked Up']
+        # iterate over the row names and run the searches
+        for i in range(len(row_names)):
+            if row_names[i] == 'Totals':
+                filtered_df = df
+            elif row_names[i] == 'Realized >=1x':
+                filtered_df = df[(df['Status'] == 'Realized') & (df['Real Multiple'] >= 1)]
+            elif row_names[i] == 'Realized <1x':
+                filtered_df = df[(df['Status'] == 'Realized') & (df['Real Multiple'] < 1)]
+            elif row_names[i] == 'Locked':
+                filtered_df = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == True)]
+            elif row_names[i] == 'Marked Up':
+                filtered_df = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == False) & (df['Real Multiple'] >= 1)]
+            elif row_names[i] == 'Not Marked Up':
+                filtered_df = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == False) & (df['Real Multiple'] < 1)]
 
-        # 2.d Calculate the profit and Real Multiple along with some results about realisations
-        df["Profit"] = df["Realized Value"] - df["Invested"]
-        df['Real Multiple'] = df['Realized Value']/df['Invested']
+            # Calculate summary statistics
+            count = len(filtered_df)
+            invested_sum = filtered_df['Invested'].sum()
+            realized_sum = filtered_df['Realized Value'].sum()
+            unrealized_sum = filtered_df['Unrealized Value'].sum()
+            multiple = (unrealized_sum + realized_sum) / invested_sum if invested_sum != 0 else 0  # Handle potential division by zero
+            if row_names[i] == 'Totals': # Only do this once and can reuse this value in further calculations
+                total_invested_original = invested_sum
+            percentage = (invested_sum / total_invested_original) * 100 if total_invested_original !=0 else 0
 
-        # 2.e Calculate the grand totals 
-        total_invested = df["Invested"].sum()
-        total_realized = df["Realized Value"].sum()
-        total_invested_live = total_invested - total_realized
+            top_companies = filtered_df.sort_values(by='Real Multiple', ascending=False).head(5)
+            examples = ""
+            for index, row in top_companies.iterrows():
+                examples += f"{row['Company/Fund']} ({row['Real Multiple']:.2f}x), "
 
-        # 2.c.1. Do realized calculations of invested and values
-        filtered_df = df[(df['Status'] == 'Realized') & (df['Real Multiple'] >= 1)]
-        invested_realised_1x = filtered_df['Invested'].sum()
-        value_realised_1x = filtered_df['Realized Value'].sum()
+            # Remove the trailing comma and space
+            examples = examples[:-2]
 
-        filtered_df = df[(df['Status'] == 'Realized') & (df['Real Multiple'] < 1)]
-        invested_realised_less1x = filtered_df['Invested'].sum()
-        value_realised_less1x = filtered_df['Realized Value'].sum()
-        num_realised = filtered_df['Company/Fund'].count()# nunique()  Count uniques
-
-        invested_non_realised = total_invested - invested_realised_1x - invested_realised_less1x
-        invested_showing = total_invested_live - invested_locked
-
-        # Switch up real multiple to use it in a different context here
-        df['Real Multiple'] = df['Unrealized Value']/df['Invested']
-        value_markup = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == False) & (df['Real Multiple'] >= 1)]['Unrealized Value'].sum()
-        value_not_markedup = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == False) & (df['Real Multiple'] < 1)]['Unrealized Value'].sum()
-        invested_markup = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == False) & (df['Real Multiple'] >= 1)]['Invested'].sum()
-        invested_not_markedup = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == False) & (df['Real Multiple'] < 1)]['Invested'].sum()
-
-        # Sum the numbers of marked up for curiousity
-        for index, row in df.iterrows():
-#            if (row['Unrealized Value'] == 0) and (row['Valuation Unknown'] == False):
-#                df.loc[index, "Status"] = "Dead"
-#                num_realised=num_realised+1
-            if (row['Multiple']) > 1:
-                num_greater_1x_multiple = num_greater_1x_multiple + 1
+            # Create a new DataFrame for the summary
+            summary_data = {'Category' : [row_names[i]], 'Count': [count], 'Percentage': [percentage], 'Invested': [invested_sum],
+                            'Realized': [realized_sum], 'Unrealized': [unrealized_sum], 'Multiple': [multiple], 'Examples': [examples] }
+            if row_names[i] == 'Totals': # Create the table otherwise append
+                summary_df = pd.DataFrame(summary_data)
+            else:
+                summary_df = pd.concat([summary_df, pd.DataFrame(summary_data)], ignore_index=True)
 
         # 2.d Calculate lead statistics by aggregating data
         aggregated_df = df.groupby('Lead').agg(
@@ -238,28 +240,10 @@ elif option == "Load Data":
 
         # Set session state values for other screens
         st.session_state.df = df
-        st.session_state.invested_realised_1x = invested_realised_1x
-        st.session_state.invested_realised_less1x = invested_realised_less1x
-        st.session_state.invested_non_realised = invested_non_realised
-        st.session_state.total_invested = total_invested
+        st.session_state.sumdf = summary_df
 
-        st.session_state.value_realised_1x = value_realised_1x
-        st.session_state.value_realised_less1x = value_realised_less1x
-        st.session_state.total_realised = total_realized
-        st.session_state.invested_locked = invested_locked
-        st.session_state.invested_showing = invested_showing
-        st.session_state.total_invested_live = total_invested_live
-
-        st.session_state.value_markup = value_markup
-        st.session_state.value_not_markedup = value_not_markedup
-        st.session_state.invested_markup = invested_markup
-        st.session_state.invested_not_markedup = invested_not_markedup
-        st.session_state.value_locked = value_locked
-
-        st.session_state.num_realised = num_realised
-        st.session_state.num_greater_1x_multiple = num_greater_1x_multiple
         st.session_state.num_uniques = num_uniques
-        st.session_state.total_investments = total_investments
+#       st.session_state.total_investments = total_investments
         st.session_state.num_leads = num_leads
         st.session_state.num_zero_value_leads = num_zero_value_leads
         st.session_state.num_locked = num_locked
@@ -281,54 +265,35 @@ elif option == "Stats":
         a, b, f, g = st.columns(4) # Macro stats - investments + companies plus syndicate stats
         c, d, e = st.columns(3) # Macro valuation stats - total value, net value and invested $
 #       f, g = st.columns(2) # Syndicate info
-        t, h, i, j = st.columns(4) # Realized Information
-        u, k, l, m = st.columns(4) # Locked Information
-        v, n, o, p = st.columns(4) # <=1x Information
-        w, q, r, s = st.columns(4) # >1x Information
 
-        with t:
-            st.write("Realised:")
-            st.write(f"{(st.session_state.num_realised*100/st.session_state.total_investments):.0f} %")
-        with u:
-            st.write("Locked:")
-            st.write(f"{(st.session_state.num_locked*100/st.session_state.total_investments):.0f} %")
-        with v:
-            st.write("<1x")
-            st.write("")
-        with w:
-            st.write("1x+")
-            st.write(f"{(st.session_state.num_greater_1x_multiple*100/st.session_state.total_investments):.0f} %")
-        a.metric(label="Investments", value=st.session_state.total_investments, border=True)
+        sumdf = st.session_state.sumdf
+        a.metric(label="Investments", value=sumdf.loc[sumdf['Category'] == 'Totals', 'Count'].iloc[0], border=True)
         b.metric(label="Companies", value=st.session_state.num_uniques, border=True)
         if total_value > 0:
             st.session_state.total_value = total_value
-            st.session_state.value_locked = total_value - st.session_state.value_markup - st.session_state.value_not_markedup
+            locked_value = total_value - sumdf.loc[sumdf['Category'] == 'Totals', 'Unrealized'].iloc[0]
+            st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Locked', 'Unrealized'] = locked_value
+            st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Totals', 'Unrealized'] = total_value
             c.metric(label="Total Value $",value=format_currency(total_value), border=True)
-            d.metric(label="Multiple (x)",value=format_multiple(st.session_state.total_value/st.session_state.total_invested), border=True)
-        e.metric(label="Invested $",value=format_currency(st.session_state.total_invested), border=True)
+            d.metric(label="Multiple (x)",value=format_multiple(st.session_state.total_value/sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]), border=True)
+        e.metric(label="Invested $",value=format_currency(sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]), border=True)
         f.metric(label="Syndicates Invested",value=st.session_state.num_leads, border=True)
         g.metric(label="Syndicates no value info",value=st.session_state.num_zero_value_leads, border=True)
 
-        # Realized no. --> Realized Invested $ --> Realized Value
-        h.metric(label="Realized #",value=st.session_state.num_realised, border=True)
-        i.metric(label="Realized Invested $", value=format_currency(st.session_state.invested_realised_1x+st.session_state.invested_realised_less1x), border=True)
-        j.metric(label="Realised Value $",value=format_currency(st.session_state.total_realised), border=True)
+        # Neatly format everything
+        st.data_editor(
+            st.session_state.sumdf,
+                    column_config= {
+                    "Percentage": st.column_config.NumberColumn(
+                        "Percentage", help="Percentage of all invested capital", format="%.1f"
+                    ),
+                    "Multiple": st.column_config.NumberColumn(
+                        "Multiple", help="Multiple expressed as total value (realised and unrealised) / invested amount", format="%.2f x"
+                    )
+                    },
+            hide_index=True,
+        )
 
-        # Locked no. --> Locked Invested $ --> Locked Value $
-        k.metric(label="Locked #",value=st.session_state.num_locked, border=True)
-        l.metric(label="Locked Invested $",value=format_currency(st.session_state.invested_locked), border=True)
-        m.metric(label="Locked Value $",value=format_currency(st.session_state.value_locked), border=True)
-     
-        # <= 1x Information
-        n.metric(label=" <1x #",value=(st.session_state.total_investments - st.session_state.num_locked - st.session_state.num_greater_1x_multiple - st.session_state.num_realised), border=True)        
-        o.metric(label=" <1x Invested $",value=format_currency(st.session_state.invested_not_markedup), border=True)        
-        p.metric(label=" <1x Value $",value=format_currency(st.session_state.value_not_markedup), border=True)
-
-        # > 1x Information (marked up)
-        q.metric(label=" 1x+",value=st.session_state.num_greater_1x_multiple, border=True)    
-        r.metric(label=" 1x+ Invested $",value=format_currency(st.session_state.invested_markup), border=True)        
-        s.metric(label=" 1x+ Value $",value=format_currency(st.session_state.value_markup), border=True)
- 
 elif option == "Top Investments":
     st.subheader("Top Investments", divider=True)
     st.markdown('''Show selected top investments across the portfolio (by return multiple).  
@@ -346,7 +311,7 @@ elif option == "Top Investments":
 
         # Get ready for screen display - drop columns and format
         # Drop the filtered columns
-        sorted_df = sorted_df.drop(columns=['Status','Valuation Unknown', 'Profit', 'Real Multiple'])
+        sorted_df = sorted_df.drop(columns=['Status','Valuation Unknown', 'Real Multiple'])
         # Get the top X investments
         top_X_num = sorted_df.head(top_filter)
 
@@ -546,10 +511,10 @@ elif option == "Realized":
         result_sorted.insert(name_column_index+1, 'Real Multiple', result_sorted.pop('Real Multiple'))
 
         # Put in the summary analysis to help people understand what is happening here
-        display_text = f"Successful exits: turned ${st.session_state.invested_realised_1x:,.2f} into ${st.session_state.value_realised_1x:,.2f} a {(st.session_state.value_realised_1x/st.session_state.invested_realised_1x):.1f}x multiple" 
-        st.text(display_text)
-        display_text = f"Other exits: turned ${st.session_state.invested_realised_less1x:,.2f} into ${st.session_state.value_realised_less1x:,.2f} a {(st.session_state.value_realised_less1x/st.session_state.invested_realised_less1x):.1f}x multiple" 
-        st.text(display_text)
+        #display_text = f"Successful exits: turned ${st.session_state.invested_realised_1x:,.2f} into ${st.session_state.value_realised_1x:,.2f} a {(st.session_state.value_realised_1x/st.session_state.invested_realised_1x):.1f}x multiple" 
+        #st.text(display_text)
+        #display_text = f"Other exits: turned ${st.session_state.invested_realised_less1x:,.2f} into ${st.session_state.value_realised_less1x:,.2f} a {(st.session_state.value_realised_less1x/st.session_state.invested_realised_less1x):.1f}x multiple" 
+        #st.text(display_text)
         st.text("Note that other amounts may have been realised but those investments aren't fully realised yet - eg partial earn outs")
         
         # Neatly format everything
