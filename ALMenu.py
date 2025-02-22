@@ -523,17 +523,71 @@ elif option == "Lead Stats":
 
         # now group them by Lead and calculate the average multiple
         aggregated_df = df.groupby('Lead').agg(
-            total_investments=('Company/Fund', 'size'),
-            sum_invested=('Invested', 'sum'),
-            avg_invested=('Invested', 'mean'),
-            sum_value=('Unrealized Value', 'sum')
+                    num_investments=('Company/Fund', 'size'),
+                    sum_invested=('Invested', 'sum'),
+                    unrealized=('Unrealized Value', 'sum'),
+                    avg_invested=('Invested', 'mean'),
+                    sum_value=('Unrealized Value', 'sum')
         ).reset_index()
+
         # Exclude where no value as sum (result would be infinite)
         aggregated_df = aggregated_df[aggregated_df["sum_value"] != 0]
         # Calculate average multiple
         aggregated_df['Av Multiple'] = (aggregated_df['sum_value'] / aggregated_df['sum_invested'])
+
+        # Get the realised count
+        # Filter for rows where Status is 'Realized'
+        realized_df = df[df['Status'] == 'Realized']
+        # Group by Lead and count the number of rows
+        realized_counts = realized_df.groupby('Lead').size().reset_index(name='num_Realized')
+        # Merge the realized counts back into the aggregated DataFrame
+        aggregated_df = pd.merge(aggregated_df, realized_counts, on='Lead', how='left').fillna(0)
+
+        aggregated_df['Percent Realised'] = aggregated_df['num_Realized']/aggregated_df['num_investments'] * 100
         # Take top values
         top_X_num = aggregated_df.nlargest(top_filter, 'Av Multiple')
+
+        # Shows the companies with the top multiples in 'Company (X.X)x, ...' format by matching on the Lead = mname
+        # Not sure how to generalise this but if I can then can reduce file size
+        def show_top_X_names_based_on_multiple_by_Lead(top_values, df, mname):
+            temp_df = df[df["Lead"] == mname].sort_values(by="Real Multiple", ascending=False)
+            # Create a list to store the formatted strings
+            top_X_examples_list = []
+            for index, row in temp_df.head(top_values).iterrows():
+                        company_fund = row["Company/Fund"]
+                        real_multiple = row["Real Multiple"]
+                        formatted_string = f"{company_fund} ({real_multiple:.2f}x)"
+                        top_X_examples_list.append(formatted_string)
+            # Join the formatted strings with commas
+            top_X_examples = ", ".join(top_X_examples_list)
+            return top_X_examples
+
+        def show_realised_based_on_Lead(top_values, df, mname):
+            filtered_df = df[df['Status'] == 'Realized']
+            temp_df = filtered_df[filtered_df["Lead"] == mname].sort_values(by="Real Multiple", ascending=True)
+            # Create a list to store the formatted strings
+            top_X_examples_list = []
+            for index, row in temp_df.head(top_values).iterrows():
+                        company_fund = row["Company/Fund"]
+                        real_multiple = row["Real Multiple"]
+                        formatted_string = f"{company_fund} ({real_multiple:.2f}x)"
+                        top_X_examples_list.append(formatted_string)
+            # Join the formatted strings with commas
+            top_X_examples = ", ".join(top_X_examples_list)
+            return top_X_examples
+
+        # Create a new column in the grouped dataframe to store the examples
+        top_X_num["Best"] = ""
+        top_X_num["Worst"] = ""
+
+        # Iterate through unique rounds and update the "Examples" column
+        topX = 4
+        for lead_name in top_X_num["Lead"].unique():
+            examples = show_top_X_names_based_on_multiple_by_Lead(4, df, lead_name)
+            top_X_num.loc[top_X_num["Lead"] == lead_name, "Best"] = examples
+            examples = show_realised_based_on_Lead(4, df, lead_name)
+            top_X_num.loc[top_X_num["Lead"] == lead_name, "Worst"] = examples
+
         # Neatly format everything
         st.data_editor(
             top_X_num, 
