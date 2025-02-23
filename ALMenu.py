@@ -74,7 +74,7 @@ elif option == "Load Data":
         st.session_state.df = df
         with st.container(height=200):
             st.write(df)       
-        df2 = pd.read_csv(r"/Users/deepseek/Downloads/Enhance-2.csv", header=1, skip_blank_lines=True)
+        df2 = pd.read_csv(r"/Users/deepseek/Downloads/Enhance.csv", header=1, skip_blank_lines=True)
         st.session_state.has_enhanced_data_file = True
         st.session_state.df2 = df2
         with st.container(height=200):
@@ -516,7 +516,7 @@ elif option == "Lead Stats":
     st.markdown("Show statistics about the top deal leads")
     if st.session_state.has_data_file:
         # Show the stats regarding Syndicate LEads
-        top_filter = st.slider("Show how many",1,50,5)   
+        top_filter = st.slider("Show how many",1,60,5)   
 
         # Load the data from the session state
         df = st.session_state.df
@@ -531,7 +531,7 @@ elif option == "Lead Stats":
         ).reset_index()
 
         # Exclude where no value as sum (result would be infinite)
-        aggregated_df = aggregated_df[aggregated_df["sum_value"] != 0]
+        #aggregated_df = aggregated_df[aggregated_df["sum_value"] != 0]
         # Calculate average multiple
         aggregated_df['Av Multiple'] = (aggregated_df['sum_value'] / aggregated_df['sum_invested'])
 
