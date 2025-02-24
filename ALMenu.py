@@ -802,6 +802,7 @@ elif option == "Graphs":
         plt.set_xlabel('Investment Amount ($)')
         plt.set_ylabel('Count')
         st.pyplot(plt.get_figure())
+        plt.cla()
 
         # 3. Investment Amount vs Multiple (for multiples > 1)
         scatter_df = df[(df['Real Multiple'] > 1) & (df['Invested'].notnull())]
@@ -810,6 +811,7 @@ elif option == "Graphs":
         plt.set_xlabel('Investment Amount ($)')
         plt.set_ylabel('Multiple')
         st.pyplot(plt.get_figure())
+        plt.cla()
 
         # 4. Pie chart of Lead summary for Multiples > 2
         high_multiple_deals = df[df['Real Multiple'] > 2]
@@ -817,27 +819,31 @@ elif option == "Graphs":
         plt.pie(lead_summary, labels=lead_summary.index, autopct='%1.1f%%', startangle=90, colors=sns.color_palette('pastel'))
         plt.set_title('Lead Summary for Multiples > 2')
         st.pyplot(plt.get_figure())
+        plt.cla()
 
         # 5. Plot of Round Size and Multiple
-        from scipy import stats
+        # from scipy import stats
+        # import numpy as np
+
         # Filter out rows with missing or unrealistic multiples
         df_filtered = df.dropna(subset=['Round Size', 'Real Multiple'])
 
-        # Plot scatter plot
-        sns.scatterplot(data=df_filtered, x='Round Size', y='Real Multiple', alpha=0.6)
-        plt.set_xlabel('Round Size ($)')
-        plt.set_ylabel('Multiple (x)')
-        plt.set_title('Relationship between Round Size and Multiple')
-        plt.grid(True)
+        # # Plot scatter plot
+        # #fig = plt.figure(figsize=(12,8))
+        # sns.scatterplot(data=df_filtered, x='Round Size', y='Real Multiple', alpha=0.6)
+        # plt.set_xlabel('Round Size ($)')
+        # plt.set_ylabel('Multiple (x)')
+        # plt.set_title('Relationship between Round Size and Multiple')
+        # plt.grid(True)
 
-        # Trend line
+        # # Trend line
         # mask = ~df_filtered['Round Size'].isna() & ~df_filtered['Real Multiple'].isna()
         # slope, intercept, r_value, p_value, std_err = stats.linregress(df_filtered['Round Size'][mask], df_filtered['Real Multiple'][mask])
         # line_x = np.linspace(df_filtered['Round Size'][mask].min(), df_filtered['Round Size'][mask].max(), 100)
         # line_y = slope * line_x + intercept
         # plt.plot(line_x, line_y, color='red', label='Trend line')
-        plt.legend()
-        st.pyplot(plt.get_figure())
+        # plt.legend()
+        # st.pyplot(plt.get_figure())
 
         # Calculate correlation
         correlation = df_filtered['Round Size'].corr(df_filtered['Real Multiple'])
