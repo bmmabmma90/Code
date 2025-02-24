@@ -67,7 +67,7 @@ elif option == "Load Data":
     # Display if already loaded and button not pressed or where data hasn't been loaded
     # Check if already loaded
 # Force load allows you to ignore the Load Data with specific data
-    force_load = False
+    force_load = True
     if force_load == True:
         df = pd.read_csv(r"/Users/deepseek/Downloads/ben-armstrong_angellist_investments_2025_02_21.csv", header=1, skip_blank_lines=True)
         st.session_state.has_data_file = True
@@ -117,10 +117,10 @@ elif option == "Load Data":
         df = st.session_state.df
     
     # Do all the data processing    
-    # 1. Drop the data we don't analyse for easy display / debugging
+    # 1. Drop the data we don't analyse for easy display / debugging - 'Round', 'Market', 'Round Size',
         todrop = { 'Invest Date', 'Investment Entity',
-                'Investment Type', 'Fund Name', 'Allocation', # 'Round', 'Market', 
-                'Instrument', 'Round Size', 'Valuation or Cap Type', 'Valuation or Cap',
+                'Investment Type', 'Fund Name', 'Allocation',  
+                'Instrument', 'Valuation or Cap Type', 'Valuation or Cap', 
                 'Discount', 'Carry', 'Share Class'}
         # Get the actual column names from the DataFrame
         df_columns = df.columns
@@ -141,13 +141,16 @@ elif option == "Load Data":
         # 2.a. Normalize the data by converting them to numbers
         df["Realized Value"] = df["Realized Value"].replace(r'[^\d.]', '', regex=True).astype(float)   
         df["Invested"] = df["Invested"].replace(r'[^\d.]', '', regex=True).astype(float)   
-        df["Multiple"] = df["Multiple"].replace(r'[^\d.]', '', regex=True).astype(float)   
+        df["Multiple"] = df["Multiple"].replace(r'[^\d.]', '', regex=True).astype(float)
+        if 'Round Size' in df.columns :
+            df['Round Size'] = df['Round Size'].replace(r'[^\d]', '', regex=True).astype(float)
         
         # 2.b. Special treatment of Unrealized Value because we want to flag where we don't know the actual value
         # We'll iterate through and force "Unrealized" and "Net Value" to zero AFTER we have made a note that the
         #.   value isn't known in a new column called "Unknown Value"
         # insert in a specific order for ease of reference
-        df.insert(3, "Valuation Unknown", False)
+        if 'Valuation Unknown' not in df.columns :
+            df.insert(3, "Valuation Unknown", False)
 
         num_locked = 0
         invested_locked = 0
@@ -775,7 +778,7 @@ elif option == "Graphs":
     if st.session_state.has_data_file:
         # Load the data from the session state
         df = st.session_state.df
-
+  
         # set themes and sizes - note I couldn't display it neatly
         sns.set_theme()
         # Set up the formatting and dimensions
@@ -784,7 +787,7 @@ elif option == "Graphs":
         # height = 2
 
         # 1. Distribution of Multiples > 1
-        data_mult = df[df['Multiple'] > 1]['Multiple'].dropna()
+        data_mult = df[df['Real Multiple'] > 1]['Real Multiple'].dropna()
         plt = sns.histplot(data=data_mult, bins=20, color='skyblue')
 #        fig, ax = plt.subp.subplots(figsize=(width, height))
         plt.set_title('Distribution of Investment Multiples (>1x)')
@@ -801,19 +804,44 @@ elif option == "Graphs":
         st.pyplot(plt.get_figure())
 
         # 3. Investment Amount vs Multiple (for multiples > 1)
-        scatter_df = df[(df['Multiple'] > 1) & (df['Invested'].notnull())]
-        plt = sns.scatterplot(data=scatter_df, x='Invested', y='Multiple', color='purple', alpha=0.6)
+        scatter_df = df[(df['Real Multiple'] > 1) & (df['Invested'].notnull())]
+        plt = sns.scatterplot(data=scatter_df, x='Invested', y='Real Multiple', color='purple', alpha=0.6)
         plt.set_title('Investment Amount vs Multiple')
         plt.set_xlabel('Investment Amount ($)')
         plt.set_ylabel('Multiple')
         st.pyplot(plt.get_figure())
 
         # 4. Pie chart of Lead summary for Multiples > 2
-        high_multiple_deals = df[df['Multiple'] > 2]
+        high_multiple_deals = df[df['Real Multiple'] > 2]
         lead_summary = high_multiple_deals['Lead'].value_counts()
         plt.pie(lead_summary, labels=lead_summary.index, autopct='%1.1f%%', startangle=90, colors=sns.color_palette('pastel'))
         plt.set_title('Lead Summary for Multiples > 2')
         st.pyplot(plt.get_figure())
+
+        # 5. Plot of Round Size and Multiple
+        from scipy import stats
+        # Filter out rows with missing or unrealistic multiples
+        df_filtered = df.dropna(subset=['Round Size', 'Real Multiple'])
+
+        # Plot scatter plot
+        sns.scatterplot(data=df_filtered, x='Round Size', y='Real Multiple', alpha=0.6)
+        plt.set_xlabel('Round Size ($)')
+        plt.set_ylabel('Multiple (x)')
+        plt.set_title('Relationship between Round Size and Multiple')
+        plt.grid(True)
+
+        # Trend line
+        # mask = ~df_filtered['Round Size'].isna() & ~df_filtered['Real Multiple'].isna()
+        # slope, intercept, r_value, p_value, std_err = stats.linregress(df_filtered['Round Size'][mask], df_filtered['Real Multiple'][mask])
+        # line_x = np.linspace(df_filtered['Round Size'][mask].min(), df_filtered['Round Size'][mask].max(), 100)
+        # line_y = slope * line_x + intercept
+        # plt.plot(line_x, line_y, color='red', label='Trend line')
+        plt.legend()
+        st.pyplot(plt.get_figure())
+
+        # Calculate correlation
+        correlation = df_filtered['Round Size'].corr(df_filtered['Real Multiple'])
+        st.write('Correlation coefficient between Round Size and Multiple: {:.2f}', correlation)
 
         # Print some key statistics
         st.write("Average Multiple (>1x): {:.2f}".format(data_mult.mean()))
