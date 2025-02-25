@@ -30,7 +30,7 @@ with st.sidebar:
     if st.session_state.has_data_file:
         option = st.selectbox(
             "Choose an option:",
-            ("About", "Load Data", "Stats", "Top Investments", "Round", "Market", "Realized", "Lead Stats", "Leads no markups", "Graphs")
+            ("About", "Load Data", "Stats", "Top Investments", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no markups", "Graphs")
         )
     else:
         option = st.selectbox(
@@ -117,8 +117,8 @@ elif option == "Load Data":
         df = st.session_state.df
     
     # Do all the data processing    
-    # 1. Drop the data we don't analyse for easy display / debugging - 'Round', 'Market', 'Round Size',
-        todrop = { 'Invest Date', 'Investment Entity',
+    # 1. Drop the data we don't analyse for easy display / debugging - 'Round', 'Market', 'Round Size', 'Invest Date'
+        todrop = { 'Investment Entity',
                 'Investment Type', 'Fund Name', 'Allocation',  
                 'Instrument', 'Valuation or Cap Type', 'Valuation or Cap', 
                 'Discount', 'Carry', 'Share Class'}
@@ -513,6 +513,87 @@ elif option == "Market":
     plt.title('Value created by Market')
     plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
     st.pyplot(plt)
+
+elif option == "Year":
+    st.subheader("Yearly Stats", divider=True)
+    st.markdown("Show statistics related to investments by year")
+
+    temp_df = st.session_state.df.copy()
+
+    # Clean 'Invest Date' column
+    if 'Invest Date' in temp_df.columns:
+        temp_df['Invest Date'] = pd.to_datetime(temp_df['Invest Date'], errors='coerce')
+        temp_df['Invest Year'] = temp_df['Invest Date'].dt.year
+
+    # Group by year
+    if 'Invest Year' in temp_df.columns:
+        summary_df = temp_df.groupby('Invest Year').agg(
+            Num_Investments=('Invest Year', 'count'),
+            Invest_Value=('Invested', 'sum'),
+            Min=('Invested', 'min'),
+            Max=('Invested', 'max'),
+            Total_Value=('Net Value', 'sum'),
+            Leads=('Lead', 'nunique')
+        ).reset_index()
+        
+        summary_df['Multiple'] = summary_df['Total_Value']/summary_df['Invest_Value']
+    #pct_change() * 100
+                # Neatly format everything
+        st.data_editor(
+            summary_df, 
+            column_config= {
+                "Invest Year": st.column_config.NumberColumn(
+                    "Year", help="The year in which the investment was made", format="%d"
+                ),
+                "Num_investments": st.column_config.NumberColumn(
+                    "#", help="Number of investments", format="%d"
+                ),
+                "Invest_Value": st.column_config.NumberColumn(
+                    "Invested", help="Total invested that year", format="$%.0f"
+                ), 
+                "Min": st.column_config.NumberColumn(
+                    "Min", help="Smallest investment that year", format="$%.0f"
+                ),
+                "Max": st.column_config.NumberColumn(
+                    "Max", help="Biggest investment that year", format="$%.0f"
+                ),
+                "Total_Value": st.column_config.NumberColumn(
+                    "Value", help="Total value of investments made that year", format="$%.0f"
+                ), 
+                "Multiple": st.column_config.NumberColumn(
+                    "Multiple", help="The total multiple for that year", format="%.2f x"
+                ) 
+            },
+            hide_index=True,
+        )
+
+        # Display a nice graph
+        fig, ax1 = plt.subplots(figsize=(12, 6))
+
+        # Bar plot for Invested Amount
+        ax1.bar(summary_df['Invest Year'], summary_df['Total_Value'], color='green', label='Net Value')  # Adjust alpha for visibilit
+
+        ax1.set_xlabel('Investment Year')
+        ax1.set_ylabel('Invested Amount', color='skyblue')
+        ax1.tick_params(axis='y', labelcolor='skyblue')
+        ax1.set_xticks(summary_df['Invest Year']) # Set x-ticks to years
+        ax1.bar(summary_df['Invest Year'], summary_df['Invest_Value'], color='skyblue', label='Invested Amount', alpha=0.5)
+
+        # Add annotations for Multiple values on top of the bars
+        for i, multiple in enumerate(summary_df['Multiple']):
+            ax1.text(summary_df['Invest Year'][i], summary_df['Invest_Value'][i], f'{multiple:.2f} x', ha='center', va='bottom')
+
+        # Combine legends
+        lines, labels = ax1.get_legend_handles_labels()
+        #lines2, labels2 = ax2.get_legend_handles_labels()
+        ax1.legend(lines, labels, loc='upper right')
+
+        plt.title('Analysis by Year')
+        st.pyplot(plt)
+
+    else:
+        st.write("Error: 'Invest Date' or 'Value' column not found in DataFrame.")
+
 
 elif option == "Lead Stats":        
     st.subheader("Lead Stats", divider=True)
