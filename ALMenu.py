@@ -279,10 +279,13 @@ elif option == "Stats":
             return '${:,.2f}'.format(amount)
         def format_multiple(amount) :
             return '{:.2f}x'.format(amount)
+        def format_percent(amount) :
+            return '{:.1%}'.format(amount)
+
         # Calculate the total value using an estimate
 
         a, b, f, g = st.columns(4) # Macro stats - investments + companies plus syndicate stats
-        c, d, e = st.columns(3) # Macro valuation stats - total value, net value and invested $
+        c, d, h, e = st.columns(4) # Macro valuation stats - total value, net value and invested $
 #       f, g = st.columns(2) # Syndicate info
 
         sumdf = st.session_state.sumdf
@@ -295,6 +298,36 @@ elif option == "Stats":
             st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Totals', 'Unrealized'] = total_value
             c.metric(label="Total Value $",value=format_currency(total_value), border=True)
             d.metric(label="Multiple (x)",value=format_multiple(st.session_state.total_value/sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]), border=True)
+
+            # Calculate overall XIRR
+            if 'overall_XIRR' not in st.session_state :
+                def calculate_portfolio_xirr(df, total_net_value):
+                    """Calculates the overall XIRR of the whole portfolio.
+                    Args:
+                        df: DataFrame with 'Invest Date', 'Invested' but uses total_net_value to do the total calculation.
+                    Returns:
+                        The portfolio XIRR as a float, or None if calculation fails.
+                    """
+                    try:
+                        # Combine all cashflows into a single list
+                        all_cashflows = []
+                        for index, row in df.iterrows():
+                            if pd.notna(row['Invest Date']):
+                                all_cashflows.append((row['Invest Date'], -row['Invested']))
+                        # Add the total value as at now    
+                        all_cashflows.append((datetime.now(), total_net_value))
+                        # Calculate the overall portfolio XIRR
+                        portfolio_xirr = xirr(all_cashflows)
+                        return portfolio_xirr
+                    except Exception as e:
+                        st.write(f"Error calculating portfolio XIRR: {e}")
+                        return None
+                    
+                overall_XIRR = calculate_portfolio_xirr(st.session_state.df, total_value)
+                st.session_state.overall_XIRR = overall_XIRR
+                h.metric(label="IRR %",value=format_percent(overall_XIRR), border=True)
+            else:
+                h.metric(label="IRR %",value=format_percent(st.session_state.overall_XIRR), border=True)
         e.metric(label="Invested $",value=format_currency(sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]), border=True)
         f.metric(label="Syndicates Invested",value=st.session_state.num_leads, border=True)
         g.metric(label="Syndicates no value info",value=st.session_state.num_zero_value_leads, border=True)
@@ -304,7 +337,7 @@ elif option == "Stats":
             st.session_state.sumdf,
                     column_config= {
                     "Percentage": st.column_config.NumberColumn(
-                        "Percentage", help="Percentage of all invested capital", format="%.1f"
+                        "Percentage", help="Percentage of all invested capital", format="%.1d"
                     ),
                     "Multiple": st.column_config.NumberColumn(
                         "Multiple", help="Multiple expressed as total value (realised and unrealised) / invested amount", format="%.2f x"
