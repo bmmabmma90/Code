@@ -8,6 +8,8 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 import squarify
 import numpy as np
+from pyxirr import xirr
+from datetime import datetime
 
 st.set_page_config(layout="wide")
 st.title("AngelList Startup Data Analyser")
@@ -67,7 +69,7 @@ elif option == "Load Data":
     # Display if already loaded and button not pressed or where data hasn't been loaded
     # Check if already loaded
 # Force load allows you to ignore the Load Data with specific data
-    force_load = False
+    force_load = True
     if force_load == True:
         df = pd.read_csv(r"/Users/deepseek/Downloads/ben-armstrong_angellist_investments_2025_02_21.csv", header=1, skip_blank_lines=True)
         st.session_state.has_data_file = True
@@ -169,6 +171,20 @@ elif option == "Load Data":
         df["Unrealized Value"] = df["Unrealized Value"].replace(r'[^\d.]', '', regex=True).astype(float) 
         df['Real Multiple'] = (df['Realized Value']+df['Unrealized Value'])/df['Invested']
 
+        # Calculate basic XIRR for values 
+        # improvement would be where some realised value to look at the financial information in AngelList and put in the other data to calculate this more clearly (overwriting this)
+        now = datetime.now()
+        df['XIRR'] = 0.0  # Set column to zero as a float
+        for index, row in df.iterrows():
+            if row['Net Value'] > 0: # Ignore calculating if net value is 0, ie leave XIRR as 0.0 for these
+                try:
+                    dates = [row['Invest Date'], now]
+                    amounts = [-row['Invested'], row['Net Value']]
+                    df.loc[index, 'XIRR'] = xirr(dates, amounts)
+                except Exception as e:
+                    print(f"Error calculating XIRR for row {index}: {e}")
+                    df.loc[index, 'XIRR'] = float('nan')  # or some other appropriate value
+        
         # 2.a.2 Move some columns 
         name_column_index = df.columns.get_loc('Company/Fund')
         # insert Multiple after and remove the prior position 
@@ -321,8 +337,14 @@ elif option == "Top Investments":
         # Merge the cleaned dataset with the sample dataset using 'Company/Fund' as the key
         if st.session_state.has_enhanced_data_file:
             enhanced_df = pd.merge(top_X_num, st.session_state.df2, on='Company/Fund', how='left')
+        
+            # format it nicely
+            def format_percentage(val): return "{:.2%}".format(val*100) # Formats to 2 decimal places 
+            # Apply the formatting using Pandas Styler 
+            styled_df = enhanced_df.style.format({'XIRR': format_percentage})
+
             st.data_editor(
-                enhanced_df, 
+                styled_df, 
                 column_config= {
                     "URL": st.column_config.LinkColumn(
                         "Website", help="The link to the website for the company"
@@ -384,6 +406,49 @@ elif option == "Top Investments":
         plt.title('Investment Treemap (Size by Net Value, Labels show Multiple)', pad=20)
         plt.tight_layout()
         st.pyplot(plt)
+        plt.cla()
+
+        # Also show a Waterfall Chart of value created (which isn't limited by the data set)
+        # Filter out values below the 1% threshold
+        threshold = 0.01
+        temp_df = df.copy()
+        temp_df['Val increase'] = temp_df['Net Value'] - temp_df['Invested']
+        total_increase = temp_df['Val increase'].sum()
+        filtered_df = temp_df[temp_df['Val increase'] / total_increase >= threshold]
+
+        # Group the remaining investments by 'Investment' and sum their 'Val increase'
+        others_increase = temp_df[temp_df['Val increase'] / total_increase < threshold]['Val increase'].sum()
+
+        # Create an 'Others' category
+        others_category = pd.DataFrame({'Company/Fund': ['Others'], 'Val increase': [others_increase]})
+        filtered_df = pd.concat([filtered_df, others_category])
+        sorted_df = filtered_df.sort_values(by='Val increase', ascending=False)
+        total_entries = len(sorted_df)
+
+        # Create the waterfall chart
+        fig, ax = plt.subplots(figsize=(10, 6))
+        # Get the labels and values
+        labels = sorted_df['Company/Fund'].tolist()
+        values = sorted_df['Val increase'].tolist()
+        # Plot the waterfall chart
+        ax.set_ylim(0, total_increase - others_increase) # Set y-axis limit for clarity
+        cmap = plt.get_cmap('coolwarm', total_entries)  # Use 'viridis' or any other colormap you like
+        # Initialize the current value at 0 for the first bar
+        current_value = 0
+        for i, (label, value) in enumerate(zip(labels, values)):
+            next_value = current_value + value
+            ax.bar(i, value, bottom=current_value, label=label if i == 0 else "", color=cmap(i), alpha=0.7, width=0.8) # Set label only for the first bar
+            current_value = next_value
+            ax.text(i, current_value*.9, f"{value:.0f}", ha='center', va='center')
+
+        ax.set_xticks(range(len(labels)))
+        ax.set_xticklabels(labels, rotation=45, ha='right')
+        ax.set_ylabel("Value Increase")
+        ax.set_title("Waterfall Chart of Value Increase by Investment (Over 1%)")
+        #plt.legend() # No longer needed since labels are only set for the first bar
+        plt.tight_layout()
+        st.pyplot(plt)
+
     else:
         st.write("Please Load Data file first before proceeding")  
 
