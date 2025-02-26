@@ -635,8 +635,8 @@ elif option == "Year":
         ).reset_index()
         
         summary_df['Multiple'] = summary_df['Total_Value']/summary_df['Invest_Value']
-    #pct_change() * 100
-                # Neatly format everything
+
+        # Neatly format everything
         st.data_editor(
             summary_df, 
             column_config= {
@@ -960,45 +960,53 @@ elif option == "Graphs":
   
         # set themes and sizes - note I couldn't display it neatly
         sns.set_theme()
+
         # Set up the formatting and dimensions
-        # a, b = st.columns(2)
-        # width = 3
-        # height = 2
+        col1, col2 = st.columns(2)
+        col3, col4 = st.columns(2)
 
         # 1. Distribution of Multiples > 1
-        data_mult = df[df['Real Multiple'] > 1]['Real Multiple'].dropna()
-        plt = sns.histplot(data=data_mult, bins=20, color='skyblue')
-#        fig, ax = plt.subp.subplots(figsize=(width, height))
-        plt.set_title('Distribution of Investment Multiples (>1x)')
-        plt.set_xlabel('Multiple')
-        plt.set_ylabel('Count')    
-        st.pyplot(plt.get_figure())
-
+        with col1:
+            data_mult = df[df['Real Multiple'] > 1]['Real Multiple'].dropna()
+            plt = sns.histplot(data=data_mult, bins=20, color='skyblue')
+    #        fig, ax = plt.subp.subplots(figsize=(width, height))
+            plt.set_title('Distribution of Investment Multiples (>1x)')
+            plt.set_xlabel('Multiple')
+            plt.set_ylabel('Count')    
+            st.pyplot(plt.get_figure())
+            plt.cla()
+            
         # 2. Distribution of Investment Amounts
-        plt = sns.histplot(data=df['Invested'].dropna(), bins=20, color='salmon')
- #       fig, ax = plt.subplots(figsize=(width, height))
-        plt.set_title('Distribution of Investment Amounts')
-        plt.set_xlabel('Investment Amount ($)')
-        plt.set_ylabel('Count')
-        st.pyplot(plt.get_figure())
-        plt.cla()
+        with col2:
+            plt = sns.histplot(data=df['Invested'].dropna(), bins=20, color='salmon')
+    #       fig, ax = plt.subplots(figsize=(width, height))
+            plt.set_title('Distribution of Investment Amounts')
+            plt.set_xlabel('Investment Amount ($)')
+            plt.set_ylabel('Count')
+            st.pyplot(plt.get_figure())
+            plt.cla()
 
         # 3. Investment Amount vs Multiple (for multiples > 1)
-        scatter_df = df[(df['Real Multiple'] > 1) & (df['Invested'].notnull())]
-        plt = sns.scatterplot(data=scatter_df, x='Invested', y='Real Multiple', color='purple', alpha=0.6)
-        plt.set_title('Investment Amount vs Multiple')
-        plt.set_xlabel('Investment Amount ($)')
-        plt.set_ylabel('Multiple')
-        st.pyplot(plt.get_figure())
-        plt.cla()
+        with col3:
+            scatter_df = df[(df['Real Multiple'] > 1) & (df['Invested'].notnull())]
+         #   plt = sns.scatterplot(data=scatter_df, x='Invested', y='Real Multiple', color='purple', alpha=0.6)
+            sns.regplot(data=scatter_df, x='Invested', y='Real Multiple', color='red', scatter_kws={'color': 'purple', 'alpha': 0.6})
+          
+            plt.set_title('Investment Amount vs Multiple')
+            plt.set_xlabel('Investment Amount ($)')
+            plt.set_ylabel('Multiple')
+
+            st.pyplot(plt.get_figure())
+            plt.cla()
 
         # 4. Pie chart of Lead summary for Multiples > 2
-        high_multiple_deals = df[df['Real Multiple'] > 2]
-        lead_summary = high_multiple_deals['Lead'].value_counts()
-        plt.pie(lead_summary, labels=lead_summary.index, autopct='%1.1f%%', startangle=90, colors=sns.color_palette('pastel'))
-        plt.set_title('Lead Summary for Multiples > 2')
-        st.pyplot(plt.get_figure())
-        plt.cla()
+        with col4:
+            high_multiple_deals = df[df['Real Multiple'] > 2]
+            lead_summary = high_multiple_deals['Lead'].value_counts()
+            plt.pie(lead_summary, labels=lead_summary.index, autopct='%1.1f%%', startangle=90, colors=sns.color_palette('pastel'))
+            plt.set_title('Lead Summary for Multiples > 2')
+            st.pyplot(plt.get_figure())
+            plt.cla()
 
         # 5. Plot of Round Size and Multiple
         # from scipy import stats
