@@ -630,6 +630,7 @@ elif option == "Year":
             Invest_Value=('Invested', 'sum'),
             Min=('Invested', 'min'),
             Max=('Invested', 'max'),
+            Avg = ('Invested', 'mean'),
             Total_Value=('Net Value', 'sum'),
             Leads=('Lead', 'nunique')
         ).reset_index()
@@ -654,6 +655,9 @@ elif option == "Year":
                 ),
                 "Max": st.column_config.NumberColumn(
                     "Max", help="Biggest investment that year", format="$%.0f"
+                ),
+                "Avg": st.column_config.NumberColumn(
+                    "Avg", help="Average investment that year", format="$%.0f"
                 ),
                 "Total_Value": st.column_config.NumberColumn(
                     "Value", help="Total value of investments made that year", format="$%.0f"
