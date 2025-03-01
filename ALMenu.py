@@ -1,6 +1,5 @@
 # AL_Menu
 # Streamlit menu selection and front end for AngelList
-# Needs to handle a range of things better
 
 import streamlit as st
 import pandas as pd
@@ -8,14 +7,12 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 import squarify
 import numpy as np # User for colour stuff
-import re
-from pyxirr import xirr
 from datetime import datetime, date
 from AL_Functions import (
     format_currency,
     format_multiple,
     format_percent,
-    format_percentage,
+    calculate_row_xirr,
     calculate_portfolio_xirr,
     show_top_X_increase_and_multiple,
     show_top_X_names_based_on_multiple_by_Lead,
@@ -50,7 +47,7 @@ with st.sidebar:
     if st.session_state.has_data_file:
         option = st.selectbox(
             "Choose an option:",
-            ("About", "Load Data", "Stats", "Top Investments", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no markups", "Graphs", "Tax")
+            ("About", "Load Data", "Overwrite", "Stats", "Top Investments", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no markups", "Graphs", "Tax")
         )
     else:
         option = st.selectbox(
@@ -81,6 +78,77 @@ format of this second file must be:
 '''
     st.markdown(multi)
 
+elif option == "Overwrite" :
+    st.subheader("Overwrite Values", divider=True)
+    multi = '''The overwrite function will attempt to overwrite your primary data with data from your secondary data file. 
+Once complete, all ongoing calculations will be based on this new data. 
+'''
+    st.markdown(multi)
+
+    # Add Overwrite button - add the correct logic
+    # Note that doesn't deal with double/triple ups - if that is the case it needs a way of overwriting just the valuation data for the right value
+    if st.button("Overwrite Values", type="primary") :
+        if st.session_state.has_enhanced_data_file: #Otherwise we have nothing to overwrite with
+            df = st.session_state.df
+            df2 = st.session_state.df2
+            # Check if 'New Value' column exists in df2
+            if 'New Value' in df2.columns:
+                # Ensure both dataframes have 'Company/Fund'
+                if 'Company/Fund' in df.columns and 'Company/Fund' in df2.columns:
+                    # Merge dataframes on 'Company/Fund' to find matching rows
+                    merged_df = pd.merge(df, df2[['Company/Fund', 'Invest Date', 'New Value']], on=['Company/Fund','Invest Date'], how='inner', suffixes=('', '_df2'))
+                    # Filter out rows where 'New Value' is not None
+                    rows_to_update = merged_df[merged_df['New Value'].notnull()]
+                    # Create a list to store changes for display
+                    changes_list = []
+
+                    # Update 'Net Value' in df with 'New Value' from df2
+                    for index, row in rows_to_update.iterrows():
+                        # Find the index in df where Company/Fund matches
+                        df_index = df[df['Company/Fund'] == row['Company/Fund']].index[0]
+                        # Store old values
+                        old_net_value = df.loc[df_index, 'Net Value']
+                        old_real_multiple = 0
+                        old_XIRR = 0
+                        if 'Real Multiple' in df.columns :
+                            old_real_multiple = df.loc[df_index, 'Real Multiple']
+                        if 'XIRR' in df.columns :
+                            old_xirr = df.loc[df_index, 'XIRR']
+                        # Recalculate new values - but also they need to be in the right format so we probably need to do all our normalisation code - maybe put it in a separate file somewhere?
+                        df.loc[df_index, 'Net Value'] = float(row['New Value'])
+                        df.loc[df_index, 'Real Multiple'] = row['New Value']/df.loc[df_index, 'Invested']
+                        df.loc[df_index, 'XIRR'] = xirr([df.loc[df_index, 'Invest Date'], datetime.now()], [-df.loc[df_index, 'Invested'], row['New Value']])
+
+                        # Recalculate all the data again to match the new values including IRR etc - but has to be in the right order etc
+
+                        # Record the change
+                        changes_list.append({
+                            'Company/Fund': row['Company/Fund'],
+                            'Invest Date' : row['Invest Date'],
+                            'Old Value': old_net_value,
+                            'New Value': row['New Value'],
+                            'Old Real Multiple' :old_real_multiple,
+                            'New Real Multiple' : row['Real Multiple'],
+                            'old_xirr' : old_xirr,
+                            'New XIRR' : row['XIRR']
+                        })
+
+                    # Display the changes in a DataFrame
+                    if changes_list:
+                        st.write("Values Overwritten:")
+                        changes_df = pd.DataFrame(changes_list)
+                        st.dataframe(changes_df)
+
+  
+                    else:
+                        st.write("No changes made. No matching values found or 'New Value' is empty.")
+                else:
+                    st.write("Error: 'Company/Fund' column is missing in one or both DataFrames.")
+                st.session_state.df = df
+                st.session_state.df2 = df2
+            else : st.write("No 'New Value' to replace values with in the data set")
+        else : st.write("No data file to replace values with")
+    
 elif option == "Load Data":
     st.subheader("Load in data file(s) for processing", divider=True)
     
@@ -138,68 +206,6 @@ elif option == "Load Data":
         st.session_state.has_data_file = False
         st.session_state.has_enhanced_data_file = False
 
-    # Add Overwrite button - add the correct logic
-    # Note that doesn't deal with double/triple ups - if that is the case it needs a way of overwriting just the valuation data for the right value
-    if st.button("Overwrite Values", type="primary") :
-        if st.session_state.has_enhanced_data_file: #Otherwise we have nothing to overwrite with
-                
-            # Check if 'New Value' column exists in df2
-            if 'New Value' in df2.columns:
-                # Ensure both dataframes have 'Company/Fund'
-                if 'Company/Fund' in df.columns and 'Company/Fund' in df2.columns:
-                    # Merge dataframes on 'Company/Fund' to find matching rows
-                    merged_df = pd.merge(df, df2[['Company/Fund', 'Invest Date', 'New Value']], on=['Company/Fund','Invest Date'], how='outer', suffixes=('', '_df2'))
-                    # Filter out rows where 'New Value' is not None
-                    rows_to_update = merged_df[merged_df['New Value'].notnull()]
-                    # Create a list to store changes for display
-                    changes_list = []
-
-                    # Update 'Net Value' in df with 'New Value' from df2
-                    for index, row in rows_to_update.iterrows():
-                        # Find the index in df where Company/Fund matches
-                        df_index = df[df['Company/Fund'] == row['Company/Fund']].index[0]
-                        # Store old values
-                        old_net_value = df.loc[df_index, 'Net Value']
-                        old_real_multiple = 0
-                        old_XIRR = 0
-                        if 'Real Multiple' in df.columns :
-                            old_real_multiple = df.loc[df_index, 'Real Multiple']
-                        if 'XIRR' in df.columns :
-                            old_xirr = df.loc[df_index, 'XIRR']
-                        # Recalculate new values - but also they need to be in the right format so we probably need to do all our normalisation code - maybe put it in a separate file somewhere?
-                        df.loc[df_index, 'Net Value'] = float(row['New Value'])
-                        df.loc[df_index, 'Real Multiple'] = row['New Value']/df.loc[df_index, 'Invested']
-                        df.loc[df_index, 'XIRR'] = xirr([df.loc[df_index, 'Invest Date'], datetime.now()], [-df.loc[df_index, 'Invested'], row['New Value']])
-
-                        # Recalculate all the data again to match the new values including IRR etc - but has to be in the right order etc
-
-                        # Record the change
-                        changes_list.append({
-                            'Company/Fund': row['Company/Fund'],
-                            'Invest Date' : row['Invest Date'],
-                            'Old Value': old_net_value,
-                            'New Value': row['New Value'],
-                            'Old Real Multiple' :old_real_multiple,
-                            'New Real Multiple' : row['Real Multiple'],
-                            'old_xirr' : old_xirr,
-                            'New XIRR' : row['XIRR']
-                        })
-
-                    # Display the changes in a DataFrame
-                    if changes_list:
-                        st.write("Values Overwritten:")
-                        changes_df = pd.DataFrame(changes_list)
-                        st.dataframe(changes_df)
-
-  
-                    else:
-                        st.write("No changes made. No matching values found or 'New Value' is empty.")
-                else:
-                    st.write("Error: 'Company/Fund' column is missing in one or both DataFrames.")
-                st.session_state.df = df
-                st.session_state.df2 = df2
-            else : st.write("No 'New Value' to replace values with in the data set")
-        else : st.write("No data file to replace values with")
     # Action 2 is all the data normalisation and analysis logic
     # Only do it if there is data in the data frame otherwise suggest load the data
     if st.session_state.has_data_file:
@@ -208,7 +214,7 @@ elif option == "Load Data":
     
     # Do all the data processing    
     # 1. Drop the data we don't analyse for easy display / debugging - 'Round', 'Market', 'Round Size', 'Invest Date', 'Instrument'
-        todrop = { 'Investment Entity', 'Invest Date_y', # This is a special value caused by the outer join 
+        todrop = { 'Investment Entity', 'Invest Date_y', # This is a special value caused by the outer join - we shouldn't see it! 
                 'Investment Type', 'Fund Name', 'Allocation',  
                 'Valuation or Cap Type', 'Valuation or Cap', 
                 'Discount', 'Carry', 'Share Class'}
@@ -263,15 +269,16 @@ elif option == "Load Data":
         # improvement would be where some realised value to look at the financial information in AngelList and put in the other data to calculate this more clearly (overwriting this)
         now = datetime.now()
         df['XIRR'] = 0.0  # Set column to zero as a float
-        for index, row in df.iterrows():            
-            if row['Net Value'] > 0: # Ignore calculating if net value is 0, ie leave XIRR as 0.0 for these
-                try:
-                    dates = [row['Invest Date'], now]
-                    amounts = [-row['Invested'], row['Net Value']]
-                    df.loc[index, 'XIRR'] = xirr(dates, amounts)
-                except Exception as e:
-                    print(f"Error calculating XIRR for row {index}: {e}")
-                    df.loc[index, 'XIRR'] = float('nan')  # or some other appropriate value
+        df['XIRR'] = df.apply(calculate_row_xirr, axis=1, now=now)
+        # for index, row in df.iterrows():            
+        #     if row['Net Value'] > 0: # Ignore calculating if net value is 0, ie leave XIRR as 0.0 for these
+        #         try:
+        #             dates = [row['Invest Date'], now]
+        #             amounts = [-row['Invested'], row['Net Value']]
+        #             df.loc[index, 'XIRR'] = xirr(dates, amounts)
+        #         except Exception as e:
+        #             print(f"Error calculating XIRR for row {index}: {e}")
+        #             df.loc[index, 'XIRR'] = float('nan')  # or some other appropriate value
         
         # 2.a.2 Move some columns 
         name_column_index = df.columns.get_loc('Company/Fund')
@@ -428,9 +435,10 @@ elif option == "Top Investments":
         # Merge the cleaned dataset with the sample dataset using 'Company/Fund' as the key
         if st.session_state.has_enhanced_data_file:
             enhanced_df = pd.merge(top_X_num, st.session_state.df2, on='Company/Fund', how='left')
-        
-            # Apply the formatting using Pandas Styler
-            styled_df = enhanced_df.style.format({'XIRR': format_percentage})
+            enhanced_df['XIRR'] = enhanced_df['XIRR']*100
+
+            # Apply the formatting using Pandas Styler - this doesn't seem to work
+            styled_df = enhanced_df.style.format({'XIRR': format_percent, 'Invested' : format_currency, 'Multiple': format_multiple})
 
             st.data_editor(
                 styled_df, 
@@ -443,7 +451,7 @@ elif option == "Top Investments":
                     ),
                     "Multiple": st.column_config.NumberColumn(
                         "Multiple", help="Multiple expressed as total value / invested amount", format="%.2f x"
-                    ),
+                   ),
                     "Invested": st.column_config.NumberColumn(
                         "Invested", help="Dollars invested (rounded to nearest whole number)", format="$%.0f"
                     ), 
@@ -455,7 +463,10 @@ elif option == "Top Investments":
                     ), 
                     "Realized Value": st.column_config.NumberColumn(
                         "$ Received", help="Realized value as reported by AngelList (rounded to nearest whole number)", format="$%.0f"
-                    ) 
+                    ),
+                    "XIRR": st.column_config.NumberColumn(
+                        "IRR", help="IRR for this investment", format="%.1f %%"
+                    )
                 },
                 hide_index=True,
             )
@@ -554,18 +565,18 @@ elif option == "Round":
     grouped = temp_df.groupby("Round", as_index=False).agg({"Invested":"sum", "Increase":"sum"})
     invested_sum = grouped["Invested"].sum()
     value_sum = grouped[grouped["Increase"] > 0]["Increase"].sum()
-    grouped["Perc by Invested"] = grouped["Invested"]/invested_sum * 100 if invested_sum !=0 else 0
-    grouped["Perc by Increase"] = grouped["Increase"]/value_sum * 100 if invested_sum !=0 else 0
+    grouped["Perc by Invested"] = grouped["Invested"]/invested_sum if invested_sum !=0 else 0
+    grouped["Perc by Increase"] = grouped["Increase"]/value_sum if invested_sum !=0 else 0
 
     # Create a new column in the grouped dataframe to store the examples
     grouped["Examples"] = ""
-
     # Iterate through unique rounds and update the "Examples" column
     for round_name in temp_df["Round"].unique():
         examples = show_top_X_increase_and_multiple(temp_df, round_name, 'Round')
         grouped.loc[grouped["Round"] == round_name, "Examples"] = examples
- 
-    st.write(grouped)
+
+    grouped_styled = grouped.style.format({'Perc by Invested': format_percent, 'Perc by Increase': format_percent, 'Invested': format_currency, 'Increase': format_currency})
+    st.dataframe(grouped_styled, hide_index=True)
 
     # Limited the data displayed
     sorted_df = grouped.sort_values(by='Invested', ascending=False)
@@ -602,8 +613,8 @@ elif option == "Market":
     grouped = temp_df.groupby("Market", as_index=False).agg({"Invested":"sum", "Increase":"sum"})
     invested_sum = grouped["Invested"].sum()
     value_sum = grouped[grouped["Increase"] > 0]["Increase"].sum()
-    grouped["Perc by Invested"] = grouped["Invested"]/invested_sum * 100 if invested_sum !=0 else 0
-    grouped["Perc by Increase"] = grouped["Increase"]/value_sum * 100 if invested_sum !=0 else 0
+    grouped["Perc by Invested"] = grouped["Invested"]/invested_sum if invested_sum !=0 else 0
+    grouped["Perc by Increase"] = grouped["Increase"]/value_sum if invested_sum !=0 else 0
 
     # Create a new column in the grouped dataframe to store the examples
     grouped["Examples"] = ""
@@ -613,7 +624,8 @@ elif option == "Market":
         examples = show_top_X_increase_and_multiple(temp_df, round_name, 'Market')
         grouped.loc[grouped["Market"] == round_name, "Examples"] = examples
  
-    st.write(grouped)
+    grouped_styled = grouped.style.format({'Perc by Invested': format_percent, 'Perc by Increase': format_percent, 'Invested': format_currency, 'Increase': format_currency})
+    st.dataframe(grouped_styled, hide_index=True)
 
     # Limited the data displayed
     sorted_df = grouped.sort_values(by='Invested', ascending=False)
@@ -640,77 +652,43 @@ elif option == "Market":
 
 elif option == "Year":
     st.subheader("Yearly Stats", divider=True)
-    st.markdown("Show statistics related to investments by year")
+    st.markdown("Yearly investment statistics")
 
     temp_df = st.session_state.df.copy()
 
     # Clean 'Invest Date' column
     if 'Invest Date' in temp_df.columns:
         temp_df['Invest Date'] = pd.to_datetime(temp_df['Invest Date'], errors='coerce')
-        temp_df['Invest Year'] = temp_df['Invest Date'].dt.year
+        temp_df['Year'] = temp_df['Invest Date'].dt.year
 
     # Group by year
-    if 'Invest Year' in temp_df.columns:
-        summary_df = temp_df.groupby('Invest Year').agg(
-            Num_Investments=('Invest Year', 'count'),
-            Invest_Value=('Invested', 'sum'),
-            Min=('Invested', 'min'),
-            Max=('Invested', 'max'),
+    if 'Year' in temp_df.columns:
+        summary_df = temp_df.groupby('Year').agg(
+            Investments=('Year', 'count'),
+            Leads=('Lead', 'nunique'),
+            Invested=('Invested', 'sum'),
+            Value=('Net Value', 'sum'),
             Avg = ('Invested', 'mean'),
-            Total_Value=('Net Value', 'sum'),
-            Leads=('Lead', 'nunique')
+            Min=('Invested', 'min'),
+            Max=('Invested', 'max')
         ).reset_index()
 
-        summary_df['Multiple'] = summary_df['Total_Value']/summary_df['Invest_Value']
-
-        # Neatly format everything
-        st.data_editor(
-            summary_df, 
-            column_config= {
-                "Invest Year": st.column_config.NumberColumn(
-                    "Year", help="The year in which the investment was made", format="%d"
-                ),
-                "Num_investments": st.column_config.NumberColumn(
-                    "#", help="Number of investments", format="%d"
-                ),
-                "Invest_Value": st.column_config.NumberColumn(
-                    "Invested", help="Total invested that year", format="$%.0f"
-                ), 
-                "Min": st.column_config.NumberColumn(
-                    "Min", help="Smallest investment that year", format="$%.0f"
-                ),
-                "Max": st.column_config.NumberColumn(
-                    "Max", help="Biggest investment that year", format="$%.0f"
-                ),
-                "Avg": st.column_config.NumberColumn(
-                    "Avg", help="Average investment that year", format="$%.0f"
-                ),
-                "Total_Value": st.column_config.NumberColumn(
-                    "Value", help="Total value of investments made that year", format="$%.0f"
-                ), 
-                "Multiple": st.column_config.NumberColumn(
-                    "Multiple", help="The total multiple for that year", format="%.2f x"
-                ) 
-            },
-            hide_index=True,
-        )
+        summary_df['Multiple'] = summary_df['Value']/summary_df['Invested']
+        formatted_summary_df = summary_df.style.format({'Multiple': format_multiple, 'Invested': format_currency, 'Value': format_currency, 'Min': format_currency, 'Max': format_currency, 'Avg': format_currency})
+        st.dataframe(formatted_summary_df, hide_index=True)
 
         # Display a nice graph
         fig, ax1 = plt.subplots(figsize=(12, 6))
-
-        # Bar plot for Invested Amount
-        ax1.bar(summary_df['Invest Year'], summary_df['Total_Value'], color='green', label='Net Value')  # Adjust alpha for visibilit
-
+        # Bar plot for Invested Amount and Value against each other with multiple displayed
+        ax1.bar(summary_df['Year'], summary_df['Value'], color='green', label='Net Value')  # Adjust alpha for visibilit
         ax1.set_xlabel('Investment Year')
         ax1.set_ylabel('Invested Amount', color='skyblue')
         ax1.tick_params(axis='y', labelcolor='skyblue')
-        ax1.set_xticks(summary_df['Invest Year']) # Set x-ticks to years
-        ax1.bar(summary_df['Invest Year'], summary_df['Invest_Value'], color='skyblue', label='Invested Amount', alpha=0.5)
-
+        ax1.set_xticks(summary_df['Year']) # Set x-ticks to years
+        ax1.bar(summary_df['Year'], summary_df['Invested'], color='skyblue', label='Invested Amount', alpha=0.5)
         # Add annotations for Multiple values on top of the bars
         for i, multiple in enumerate(summary_df['Multiple']):
-            ax1.text(summary_df['Invest Year'][i], summary_df['Invest_Value'][i], f'{multiple:.2f} x', ha='center', va='bottom')
-
+            ax1.text(summary_df['Year'][i], summary_df['Value'][i], f'{multiple:.2f} x', ha='center', va='bottom')
         # Combine legends
         lines, labels = ax1.get_legend_handles_labels()
         #lines2, labels2 = ax2.get_legend_handles_labels()
@@ -757,12 +735,9 @@ elif option == "Year":
         ax2.legend(lines + lines2, labels + labels2, loc='upper center')
         # Improve layout
         plt.tight_layout()
-        st.pyplot(fig)
-        
-
+        st.pyplot(fig)        
     else:
         st.write("Error: 'Invest Date' or 'Value' column not found in DataFrame.")
-
 
 elif option == "Lead Stats":        
     st.subheader("Lead Stats", divider=True)

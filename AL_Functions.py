@@ -1,6 +1,7 @@
 # This file contains all the standalone functions used by ALMenu for reuse rather than having one monolithic file
 
 import pandas as pd
+import re
 from pyxirr import xirr
 from datetime import datetime
 import streamlit as st
@@ -20,9 +21,47 @@ def format_percent(amount):
     """Formats a number as a percentage."""
     return '{:.1%}'.format(amount)
 
+# Formats percentage for Streamlit
 def format_percentage(val): return "{:.2%}".format(val*100) # Formats to 2 decimal places 
- 
 
+# Tries to extract a company name from an AngelList description in tax data that is a bit messy and not clear
+def extract_company_name(description, pattern):
+    if pd.isna(description):
+        return ""
+    # Remove anything after a hyphen
+    description = re.split(r"-", description, maxsplit=1)[0]
+    # Remove the brackets and anything in between
+    description = re.sub(r"\(.*?\)", "", description)
+    # Remove the phrases using regex substitution
+    return re.sub(pattern, "", description).strip() #.strip() removes leading and trailing whitespace.
+
+# Force convert a date from a string - not sure this works brilliantly because has 
+# Create a new date called 'New Date' that is a real sortable date value
+def convert_date(date_str):
+    if pd.isna(date_str):
+        return pd.NaT  # Return Not a Time value for missing dates
+    try:
+        return pd.to_datetime(date_str)
+    except ValueError:
+        try:
+            return pd.to_datetime(date_str, format='%m/%d/%y')
+        except ValueError:
+            print(f"Could not convert date: {date_str}")
+            return pd.NaT  # Return NaT for unconvertible dates
+ 
+def calculate_row_xirr(row, now):
+    """Calculates the XIRR for a single row based on Invest Date, Invested, Net Value and now only"""
+    if row['Net Value'] > 0:
+        try:
+            dates = [row['Invest Date'], now]
+            amounts = [-row['Invested'], row['Net Value']]
+            return xirr(dates, amounts)
+        except Exception as e:
+            print(f"Error calculating XIRR for row {row.name}: {e}")
+            return float('nan')
+    return 0.0
+
+# Calculate the whole portfolio's XIRR using hte XIRR function 
 def calculate_portfolio_xirr(df, total_net_value):
     """Calculates the overall XIRR of the whole portfolio.
     Args:
@@ -110,26 +149,3 @@ def show_realised_based_on_Lead(top_values, df, mname):
     # Join the formatted strings with commas
     top_X_examples = ", ".join(top_X_examples_list)
     return top_X_examples
-
-def extract_company_name(description, pattern):
-    if pd.isna(description):
-        return ""
-    # Remove anything after a hyphen
-    description = re.split(r"-", description, maxsplit=1)[0]
-    # Remove the brackets and anything in between
-    description = re.sub(r"\(.*?\)", "", description)
-    # Remove the phrases using regex substitution
-    return re.sub(pattern, "", description).strip() #.strip() removes leading and trailing whitespace.
-
-# Create a new date called 'New Date' that is a real sortable date value
-def convert_date(date_str):
-    if pd.isna(date_str):
-        return pd.NaT  # Return Not a Time value for missing dates
-    try:
-        return pd.to_datetime(date_str)
-    except ValueError:
-        try:
-            return pd.to_datetime(date_str, format='%m/%d/%y')
-        except ValueError:
-            print(f"Could not convert date: {date_str}")
-            return pd.NaT  # Return NaT for unconvertible dates
