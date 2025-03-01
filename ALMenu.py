@@ -28,7 +28,7 @@ st.title("AngelList Startup Data Analyser")
 
 # Set has no data file until one is read in correctly
 if 'force_load' not in st.session_state: 
-    st.session_state.force_load = True
+    st.session_state.force_load = False
 if 'advanced_user' not in st.session_state:
     st.session_state.advanced_user = True
 if 'has_data_file' not in st.session_state: 
@@ -107,8 +107,6 @@ Once complete, all ongoing calculations will be based on this new data.
                 if all(col in df.columns for col in ['Company/Fund', 'Invest Date']) and all(col in df2.columns for col in ['Company/Fund', 'Match Date']):
                     # Merge dataframes on 'Company/Fund' to find matching rows
                     df2['Match Date'] = df2['Match Date'].apply(convert_date)
-#                    df2['Match Date'] = pd.to_datetime(df2['Match Date'])
-      #              df['Invest Date'] = pd.to_datetime(df['Invest Date'])
                     merged_df = pd.merge(df, df2[['Company/Fund', 'Match Date', 'New Value']], left_on=['Company/Fund','Invest Date'], right_on=['Company/Fund','Match Date'], how='inner', suffixes=('', '_df2'))
                     # Filter out rows where 'New Value' is not None
                     rows_to_update = merged_df[merged_df['New Value'].notnull()]
