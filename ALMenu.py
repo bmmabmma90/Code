@@ -7,7 +7,8 @@ import pandas as pd
 from matplotlib import pyplot as plt
 import seaborn as sns
 import squarify
-import numpy as np
+import numpy as np # User for colour stuff
+import re
 from pyxirr import xirr
 from datetime import datetime
 
@@ -15,10 +16,15 @@ st.set_page_config(layout="wide")
 st.title("AngelList Startup Data Analyser")
 
 # Set has no data file until one is read in correctly
+if 'force_load' not in st.session_state: 
+    st.session_state.force_load = True
 if 'has_data_file' not in st.session_state: 
     st.session_state.has_data_file = False
 if 'has_enhanced_data_file' not in st.session_state: 
     st.session_state.has_enhanced_data_file = False
+if 'has_finance_data_file' not in st.session_state: 
+    st.session_state.has_finance_data_file = False
+
 if 'df' not in st.session_state: 
     st.session_state.df = pd.DataFrame()
 if 'df2' not in st.session_state: 
@@ -32,12 +38,12 @@ with st.sidebar:
     if st.session_state.has_data_file:
         option = st.selectbox(
             "Choose an option:",
-            ("About", "Load Data", "Stats", "Top Investments", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no markups", "Graphs")
+            ("About", "Load Data", "Stats", "Top Investments", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no markups", "Graphs", "Tax")
         )
     else:
         option = st.selectbox(
             "Choose an option:",
-            ("About", "Load Data")
+            ("About", "Load Data", "Tax")
         )
         
 # Perform actions based on the selected option
@@ -69,7 +75,8 @@ elif option == "Load Data":
     # Display if already loaded and button not pressed or where data hasn't been loaded
     # Check if already loaded
 # Force load allows you to ignore the Load Data with specific data
-    force_load = True
+    force_load = st.session_state.force_load
+
     if force_load == True:
         df = pd.read_csv(r"/Users/deepseek/Downloads/ben-armstrong_angellist_investments_2025_02_21.csv", header=1, skip_blank_lines=True)
         st.session_state.has_data_file = True
@@ -84,6 +91,7 @@ elif option == "Load Data":
     else:
         # Action 1: Load in Data
         uploaded_file = st.file_uploader("Choose the AngelList file in a CSV format", type="csv")
+
 
     if force_load == False and uploaded_file is not None:
         try:
@@ -111,18 +119,24 @@ elif option == "Load Data":
             st.write("Error: Could not parse file as a CSV file. Please ensure it's a valid CSV.")
         except Exception as e:
             st.write(f"An unexpected error occurred: {e}")
-    
-        # Action 2 is all the data normalisation and analysis logic
+
+    # Add a button to reset the data load
+    if st.button("Reload all Data", type="primary"):
+        st.session_state.force_load = False
+        st.session_state.has_data_file = False
+        st.session_state.has_enhanced_data_file = False
+
+    # Action 2 is all the data normalisation and analysis logic
     # Only do it if there is data in the data frame otherwise suggest load the data
     if st.session_state.has_data_file:
         # Set the df locally from the data session
         df = st.session_state.df
     
     # Do all the data processing    
-    # 1. Drop the data we don't analyse for easy display / debugging - 'Round', 'Market', 'Round Size', 'Invest Date'
+    # 1. Drop the data we don't analyse for easy display / debugging - 'Round', 'Market', 'Round Size', 'Invest Date', 'Instrument'
         todrop = { 'Investment Entity',
                 'Investment Type', 'Fund Name', 'Allocation',  
-                'Instrument', 'Valuation or Cap Type', 'Valuation or Cap', 
+                'Valuation or Cap Type', 'Valuation or Cap', 
                 'Discount', 'Carry', 'Share Class'}
         # Get the actual column names from the DataFrame
         df_columns = df.columns
@@ -480,7 +494,7 @@ elif option == "Top Investments":
         ax.set_title("Waterfall Chart of Value Increase by Investment (Over 1%)")
         #plt.legend() # No longer needed since labels are only set for the first bar
         plt.tight_layout()
-        st.pyplot(plt)
+        st.pyplot(plt.get_figure())
 
     else:
         st.write("Please Load Data file first before proceeding")  
@@ -692,6 +706,47 @@ elif option == "Year":
 
         plt.title('Analysis by Year')
         st.pyplot(plt)
+        
+        # Show the second graph of Investments over time
+        # prompt: Sort df by Invest Date. Graph invest date by amount and show it as a scatterpot using Seaborn. Also on the right hand axis show the cumulative amount invested over time as bars representing a month of time
+        import matplotlib.ticker as mtick
+
+        # Sort by Invest Date before calculating cumulative sum
+        temp_df.sort_values(by='Invest Date', inplace=True)
+        # Calculate cumulative investment
+        temp_df['Cumulative Invested'] = temp_df['Invested'].cumsum()
+            # Create the figure and axes
+        fig, ax1 = plt.subplots(figsize=(12, 6))
+        # Plot the scatter plot on the first axis
+        sns.scatterplot(x='Invest Date', y='Invested', data=temp_df, ax=ax1, label='Investment Amount', color="blue")
+        ax1.set_xlabel('Date of Investment')
+        ax1.set_ylabel('Amount Invested', color='blue')
+        ax1.tick_params(axis='y', labelcolor='blue')
+        # Create a second y-axis for the cumulative investment
+        ax2 = ax1.twinx()
+        # Calculate monthly cumulative investments
+        df_monthly = temp_df.groupby(pd.Grouper(key='Invest Date', freq='ME'))['Cumulative Invested'].last().reset_index()
+        # Plot the cumulative investment as bars on the second axis
+        ax2.bar(df_monthly['Invest Date'], df_monthly['Cumulative Invested'], width=25, color="orange", alpha = 0.5, label='Cumulative Investment')
+        ax2.set_ylabel('Cumulative Amount Invested', color='orange')
+        ax2.tick_params(axis='y', labelcolor='orange')
+        # Format y-axis ticks as currency
+        formatter = mtick.FormatStrFormatter('$%1.0f')
+        ax1.yaxis.set_major_formatter(formatter)
+        ax2.yaxis.set_major_formatter(formatter)
+        # Set title and rotate x-axis labels
+        plt.title('Investment amount over time')
+        plt.xticks(rotation=45)
+        # Add legends
+        lines, labels = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        # Only show one legend
+        ax1.get_legend().remove()
+        ax2.legend(lines + lines2, labels + labels2, loc='upper center')
+        # Improve layout
+        plt.tight_layout()
+        st.pyplot(fig)
+        
 
     else:
         st.write("Error: 'Invest Date' or 'Value' column not found in DataFrame.")
@@ -968,49 +1023,67 @@ elif option == "Graphs":
         # Set up the formatting and dimensions
         col1, col2 = st.columns(2)
         col3, col4 = st.columns(2)
+        col5, col6 = st.columns(2)
 
         # 1. Distribution of Multiples > 1
         with col1:
             data_mult = df[df['Real Multiple'] > 1]['Real Multiple'].dropna()
-            plt = sns.histplot(data=data_mult, bins=20, color='skyblue')
-    #        fig, ax = plt.subp.subplots(figsize=(width, height))
-            plt.set_title('Distribution of Investment Multiples (>1x)')
-            plt.set_xlabel('Multiple')
-            plt.set_ylabel('Count')    
-            st.pyplot(plt.get_figure())
-            plt.cla()
+            fig, ax = plt.subplots()
+            sns.histplot(data=data_mult, bins=20, color='skyblue')
+            ax.set_title('Distribution of Investment Multiples (>1x)')
+            ax.set_xlabel('Multiple')
+            ax.set_ylabel('Count')    
+            st.pyplot(fig)
             
         # 2. Distribution of Investment Amounts
         with col2:
-            plt = sns.histplot(data=df['Invested'].dropna(), bins=20, color='salmon')
-    #       fig, ax = plt.subplots(figsize=(width, height))
-            plt.set_title('Distribution of Investment Amounts')
-            plt.set_xlabel('Investment Amount ($)')
-            plt.set_ylabel('Count')
-            st.pyplot(plt.get_figure())
-            plt.cla()
-
+            fig, ax = plt.subplots()
+            sns.histplot(data=df['Invested'].dropna(), bins=20, color='salmon')
+            ax.set_title('Distribution of Investment Amounts')
+            ax.set_xlabel('Investment Amount ($)')
+            ax.set_ylabel('Count')
+            st.pyplot(fig)
+            
         # 3. Investment Amount vs Multiple (for multiples > 1)
         with col3:
             scatter_df = df[(df['Real Multiple'] > 1) & (df['Invested'].notnull())]
-         #   plt = sns.scatterplot(data=scatter_df, x='Invested', y='Real Multiple', color='purple', alpha=0.6)
-            sns.regplot(data=scatter_df, x='Invested', y='Real Multiple', color='red', scatter_kws={'color': 'purple', 'alpha': 0.6})
-          
-            plt.set_title('Investment Amount vs Multiple')
-            plt.set_xlabel('Investment Amount ($)')
-            plt.set_ylabel('Multiple')
-
-            st.pyplot(plt.get_figure())
-            plt.cla()
+            fig, ax = plt.subplots()
+            sns.regplot(data=scatter_df, x='Invested', y='Real Multiple', color='red', scatter_kws={'color': 'purple', 'alpha': 0.6})          
+            ax.set_title('Investment Amount vs Multiple')
+            ax.set_xlabel('Investment Amount ($)')
+            ax.set_ylabel('Multiple')
+            st.pyplot(fig)
 
         # 4. Pie chart of Lead summary for Multiples > 2
         with col4:
             high_multiple_deals = df[df['Real Multiple'] > 2]
             lead_summary = high_multiple_deals['Lead'].value_counts()
-            plt.pie(lead_summary, labels=lead_summary.index, autopct='%1.1f%%', startangle=90, colors=sns.color_palette('pastel'))
-            plt.set_title('Lead Summary for Multiples > 2')
-            st.pyplot(plt.get_figure())
-            plt.cla()
+            fig, ax = plt.subplots()          
+            ax.pie(lead_summary, labels=lead_summary.index, autopct='%1.1f%%', startangle=90, colors=sns.color_palette('pastel'))
+            ax.set_title('Lead Summary for Multiples > 2')
+            st.pyplot(fig)
+
+        # 5. Plot of Instrument vs Invested
+        with col5:
+            if 'Instrument' in df.columns :
+                # Really dumb way of fudging the legends by renaming in the data
+                # Calculate the percentage of total investment for each instrument
+                instrument_investment_percentage = df.groupby('Instrument')['Invested'].sum() / df['Invested'].sum() * 100
+                # Set up a temporary data set and rename all the Instruments to showing % so they are in the final graph
+                df_temp = df.copy()
+                df_temp['Instrument'] = df_temp['Instrument'].replace("debt", f"debt ({instrument_investment_percentage.get('debt', 0):.1f}%)")
+                df_temp['Instrument'] = df_temp['Instrument'].replace("equity", f"equity ({instrument_investment_percentage.get('equity', 0):.1f}%)")
+                df_temp['Instrument'] = df_temp['Instrument'].replace("safe", f"safe ({instrument_investment_percentage.get('safe', 0):.1f}%)")
+                # Create the violin plot
+                fig, ax = plt.subplots(figsize=(10, 6))  # Increase figure size
+                sns.violinplot(df_temp, x='Invested', y='Instrument', hue='Instrument', inner='stick', ax=ax)
+                sns.despine(top=True, right=True, bottom=True, left=True)
+                ax.set_title('Instrument vs Invested')
+                ax.set_xlabel('Investment Amount ($)')
+                ax.set_ylabel('Instrument')
+                ax.legend(loc='upper right')
+                plt.tight_layout()  # Improve layout
+                st.pyplot(fig)
 
         # 5. Plot of Round Size and Multiple
         # from scipy import stats
@@ -1018,23 +1091,6 @@ elif option == "Graphs":
 
         # Filter out rows with missing or unrealistic multiples
         df_filtered = df.dropna(subset=['Round Size', 'Real Multiple'])
-
-        # # Plot scatter plot
-        # #fig = plt.figure(figsize=(12,8))
-        # sns.scatterplot(data=df_filtered, x='Round Size', y='Real Multiple', alpha=0.6)
-        # plt.set_xlabel('Round Size ($)')
-        # plt.set_ylabel('Multiple (x)')
-        # plt.set_title('Relationship between Round Size and Multiple')
-        # plt.grid(True)
-
-        # # Trend line
-        # mask = ~df_filtered['Round Size'].isna() & ~df_filtered['Real Multiple'].isna()
-        # slope, intercept, r_value, p_value, std_err = stats.linregress(df_filtered['Round Size'][mask], df_filtered['Real Multiple'][mask])
-        # line_x = np.linspace(df_filtered['Round Size'][mask].min(), df_filtered['Round Size'][mask].max(), 100)
-        # line_y = slope * line_x + intercept
-        # plt.plot(line_x, line_y, color='red', label='Trend line')
-        # plt.legend()
-        # st.pyplot(plt.get_figure())
 
         # Calculate correlation
         correlation = df_filtered['Round Size'].corr(df_filtered['Real Multiple'])
@@ -1047,8 +1103,83 @@ elif option == "Graphs":
         st.write("Median Investment Amount: ${:,.2f}".format(df['Invested'].median()))
     else:
         st.write("Please Load Data file first before proceeding")
+elif option == "Tax":
+    st.subheader("Tax and Finance Analysis", divider=True)
+    st.markdown("Look at the money flows (money into the account, out of the account). This is in preparation for tax time but also to more accurately calculate the XIRR by using exact dates of returned funds.")
+    if st.session_state.has_finance_data_file:
+        df3 = st.session_state.df3
+    else:
+        uploaded_file = st.file_uploader("Choose the AngelList finance file in a CSV format", type="csv")
+    # If the uploaded_file is true
+    if uploaded_file is not None :
+        try:
+            df3 = pd.read_csv(uploaded_file, header=0, skip_blank_lines=True)
+            st.session_state.has_finance_data_file = True
+            st.session_state.df3 = df3
+            with st.container(height=200):
+                st.write(df3)
+        except pd.errors.ParserError:
+            st.write(f"Error: Could not parse file as a CSV file. Please ensure it's a valid CSV.")
+        except Exception as e:
+            st.write(f"An unexpected error occurred: {e}")
+    
+    if st.session_state.has_finance_data_file :
+        # Group by 'Transaction type' and sum the 'Amount'
+        subtotals = df3.groupby('Transaction')['Amount'].sum()
+        st.table(subtotals)
 
-## Optional: Add a button to reset the selection
-#if st.button("Reset Selection"):
-#    option = None
-#    st.write("Selection reset. Please choose an option again.")
+        # prompt: Create a new column called 'Company/Fund' that looks at the Transaction and Description column. It should have an empty value where 'Transaction' is a Deposit or Refill otherwise it should return the value from 'Description' but ignore words like "Closing Proceeds", "Amount Adjustment for", "Refund for", "Investment in", "Return of Capital", "Dissolution Proceeds" and also ignore anything after an initial hyphen ('-').
+        # Ignore specific phrases
+        phrases_to_remove = ["Closing Proceeds from", "Amount adjustment for", "Refund for", "Closing proceeds from",
+                            "Investment in", "For investment in", "Return of Capital", "Dissolution Proceeds", "Holdback", "Acquisition", "acquisition.", "acquisition", "Merger", "Distribution"]
+        # Escape special characters in phrases for regex
+        escaped_phrases = [re.escape(phrase) for phrase in phrases_to_remove]
+        # Create a regex pattern to match any of the phrases
+        pattern = "|".join(escaped_phrases)
+
+        def extract_company_name(description, pattern):
+            if pd.isna(description):
+                return ""
+            # Remove anything after a hyphen
+            description = re.split(r"-", description, maxsplit=1)[0]
+            # Remove the brackets and anything in between
+            description = re.sub(r"\(.*?\)", "", description)
+            # Remove the phrases using regex substitution
+            return re.sub(pattern, "", description).strip() #.strip() removes leading and trailing whitespace.
+
+        # Apply the function to create the new 'Company/Fund' column
+        df3['Company/Fund'] = df3.apply(lambda row: "" if row['Transaction'] in ['Deposit', 'Refill'] else extract_company_name(row['Description'], pattern), axis=1)
+
+        # Create a new date called 'New Date' that is a real sortable date value
+        def convert_date(date_str):
+            if pd.isna(date_str):
+                return pd.NaT  # Return Not a Time value for missing dates
+            try:
+                return pd.to_datetime(date_str)
+            except ValueError:
+                try:
+                    return pd.to_datetime(date_str, format='%m/%d/%y')
+                except ValueError:
+                    print(f"Could not convert date: {date_str}")
+                    return pd.NaT  # Return NaT for unconvertible dates
+        df3['New Date'] = df3['Date'].apply(convert_date)
+
+        # prompt: Show all the values where there is one or more matches on Company/Fund, sort them by Company/Fund but also by Date in reverse order. Drop the Balance column and show the Company/Fund coloumn first. Don't show any values where there isn't an entry on the Company/Fund column. Also convert the date to a date field first. As a final step only show company/Fund values where there was at least one Disbursement
+        # Filter out rows where 'Company/Fund' is empty
+        df_t = df3[df3['Company/Fund'] != ""]
+        # Group by 'Company/Fund' and check if there's at least one disbursement
+        companies_with_disbursements = df_t[df_t['Transaction'] == 'Disbursement'].groupby('Company/Fund').size().index
+        # Filter the DataFrame to keep only companies with disbursements
+        df_f = df_t[df_t['Company/Fund'].isin(companies_with_disbursements)]
+        # Sort the DataFrame by 'Company/Fund' and 'Date' in reverse order
+        df_sorted = df_f.sort_values(['Company/Fund', 'New Date'], ascending=[True, True])
+        # Drop the 'Balance' column
+        df_sorted = df_sorted.drop(columns=['Balance'])
+        # Reorder columns to show 'Company/Fund' first
+        cols = ['Company/Fund', 'New Date', 'Transaction', 'Description', 'Amount', 'Date'] # + [col for col in df_sorted.columns if col != 'Company/Fund']
+        df_final = df_sorted[cols]
+        # Display the final DataFrame
+        st.write("These are the companies that have more than just an investment")
+        st.table(df_final)
+
+#
