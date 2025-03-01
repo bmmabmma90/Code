@@ -10,10 +10,12 @@ import numpy as np # User for colour stuff
 from datetime import datetime, date
 from AL_Functions import (
     format_currency,
+    format_currency_dollars_only,
     format_multiple,
     format_percent,
     calculate_row_xirr,
     calculate_portfolio_xirr,
+    process_and_summarize_data,
     show_top_X_increase_and_multiple,
     show_top_X_names_based_on_multiple_by_Lead,
     show_realised_based_on_Lead,
@@ -27,6 +29,8 @@ st.title("AngelList Startup Data Analyser")
 # Set has no data file until one is read in correctly
 if 'force_load' not in st.session_state: 
     st.session_state.force_load = True
+if 'advanced_user' not in st.session_state:
+    st.session_state.advanced_user = True
 if 'has_data_file' not in st.session_state: 
     st.session_state.has_data_file = False
 if 'has_enhanced_data_file' not in st.session_state: 
@@ -45,10 +49,16 @@ if 'total_value' not in st.session_state:
 with st.sidebar:
     st.header("Menu")
     if st.session_state.has_data_file:
-        option = st.selectbox(
-            "Choose an option:",
-            ("About", "Load Data", "Overwrite", "Stats", "Top Investments", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no markups", "Graphs", "Tax")
-        )
+        if st.session_state.advanced_user :
+            option = st.selectbox(
+                "Choose an option:",
+                ("About", "Load Data", "Overwrite", "Stats", "Top Investments", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no markups", "Graphs", "Tax")
+            )
+        else:
+            option = st.selectbox(
+                "Choose an option:",
+                ("About", "Load Data", "Stats", "Top Investments", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no markups", "Graphs")
+            )
     else:
         option = st.selectbox(
             "Choose an option:",
@@ -93,10 +103,13 @@ Once complete, all ongoing calculations will be based on this new data.
             df2 = st.session_state.df2
             # Check if 'New Value' column exists in df2
             if 'New Value' in df2.columns:
-                # Ensure both dataframes have 'Company/Fund'
-                if 'Company/Fund' in df.columns and 'Company/Fund' in df2.columns:
+                # Ensure both dataframes have 'Company/Fund' and have the right fields to match on
+                if all(col in df.columns for col in ['Company/Fund', 'Invest Date']) and all(col in df2.columns for col in ['Company/Fund', 'Match Date']):
                     # Merge dataframes on 'Company/Fund' to find matching rows
-                    merged_df = pd.merge(df, df2[['Company/Fund', 'Invest Date', 'New Value']], on=['Company/Fund','Invest Date'], how='inner', suffixes=('', '_df2'))
+                    df2['Match Date'] = df2['Match Date'].apply(convert_date)
+#                    df2['Match Date'] = pd.to_datetime(df2['Match Date'])
+      #              df['Invest Date'] = pd.to_datetime(df['Invest Date'])
+                    merged_df = pd.merge(df, df2[['Company/Fund', 'Match Date', 'New Value']], left_on=['Company/Fund','Invest Date'], right_on=['Company/Fund','Match Date'], how='inner', suffixes=('', '_df2'))
                     # Filter out rows where 'New Value' is not None
                     rows_to_update = merged_df[merged_df['New Value'].notnull()]
                     # Create a list to store changes for display
@@ -116,41 +129,49 @@ Once complete, all ongoing calculations will be based on this new data.
                             old_xirr = df.loc[df_index, 'XIRR']
                         # Recalculate new values - but also they need to be in the right format so we probably need to do all our normalisation code - maybe put it in a separate file somewhere?
                         df.loc[df_index, 'Net Value'] = float(row['New Value'])
+                        df.loc[df_index, 'Unrealized Value'] = float(row['New Value']) # If don't set this it gets overridden later when calculating everyhing from scratch
                         df.loc[df_index, 'Real Multiple'] = row['New Value']/df.loc[df_index, 'Invested']
-                        df.loc[df_index, 'XIRR'] = xirr([df.loc[df_index, 'Invest Date'], datetime.now()], [-df.loc[df_index, 'Invested'], row['New Value']])
-
-                        # Recalculate all the data again to match the new values including IRR etc - but has to be in the right order etc
+                        df.loc[df_index, 'XIRR'] = calculate_row_xirr(df.loc[df_index], datetime.now())
 
                         # Record the change
                         changes_list.append({
-                            'Company/Fund': row['Company/Fund'],
-                            'Invest Date' : row['Invest Date'],
+                            'Company/Fund': df.loc[df_index, 'Company/Fund'],
+                            'Invest Date' : df.loc[df_index, 'Invest Date'],
                             'Old Value': old_net_value,
-                            'New Value': row['New Value'],
+                            'New Value': df.loc[df_index, 'Net Value'],
                             'Old Real Multiple' :old_real_multiple,
-                            'New Real Multiple' : row['Real Multiple'],
+                            'New Real Multiple' : df.loc[df_index, 'Real Multiple'],
                             'old_xirr' : old_xirr,
-                            'New XIRR' : row['XIRR']
+                            'New XIRR' : df.loc[df_index, 'XIRR']
                         })
-
                     # Display the changes in a DataFrame
                     if changes_list:
-                        st.write("Values Overwritten:")
+                        st.write("Values Overwritten (and recalculated values) were as follows")
                         changes_df = pd.DataFrame(changes_list)
                         st.dataframe(changes_df)
 
-  
+                        # Run the process thing again
+                            # 2. Process all the data
+                        df, summary_df, num_uniques, num_leads, num_zero_value_leads, num_locked = process_and_summarize_data(df)
+
+                        st.dataframe(df)
+                        # Set session state values for other screens
+                        st.session_state.df = df
+                        st.session_state.sumdf = summary_df
+                        st.session_state.num_uniques = num_uniques
+                        st.session_state.num_leads = num_leads
+                        st.session_state.num_zero_value_leads = num_zero_value_leads
+                        st.session_state.num_locked = num_locked
                     else:
                         st.write("No changes made. No matching values found or 'New Value' is empty.")
                 else:
-                    st.write("Error: 'Company/Fund' column is missing in one or both DataFrames.")
-                st.session_state.df = df
-                st.session_state.df2 = df2
+                    st.write("Error: 'Company/Fund' column is missing in one or both DataFrames and/or no 'Invest Date' and 'Match Date' found")
             else : st.write("No 'New Value' to replace values with in the data set")
         else : st.write("No data file to replace values with")
     
 elif option == "Load Data":
-    st.subheader("Load in data file(s) for processing", divider=True)
+    st.subheader("(Re)Load in data file(s) for processing", divider=True)
+    st.markdown("You can (re)load the data from the data file and replace any changes you have made to the data locally.")
     
     # Display if already loaded and button not pressed or where data hasn't been loaded
     # Check if already loaded
@@ -201,10 +222,11 @@ elif option == "Load Data":
             st.write(f"An unexpected error occurred: {e}")
 
     # Add a button to reset the data load
-    if st.button("Reload all Data", type="primary"):
-        st.session_state.force_load = False
-        st.session_state.has_data_file = False
-        st.session_state.has_enhanced_data_file = False
+    if force_load :
+        if st.button("Reload all Data", type="primary"):
+            st.session_state.force_load = False
+            st.session_state.has_data_file = False
+            st.session_state.has_enhanced_data_file = False
 
     # Action 2 is all the data normalisation and analysis logic
     # Only do it if there is data in the data frame otherwise suggest load the data
@@ -227,137 +249,14 @@ elif option == "Load Data":
         # Drop the filtered columns
         df = df.drop(columns=todrop_filtered)
 
-    # 2. Collect stats
-        # Total rows in the dataframe (ie investments)
-        total_investments = len(df.index)
-        # Get unique transactions in the Name / Description column
-        unique_names = df["Company/Fund"].unique()
-        num_uniques = len(unique_names)
-
-        # 2.a. Normalize the data by converting them to numbers
-        df["Realized Value"] = df["Realized Value"].replace(r'[^\d.]', '', regex=True).astype(float)   
-        df["Invested"] = df["Invested"].replace(r'[^\d.]', '', regex=True).astype(float)   
-        df["Multiple"] = df["Multiple"].replace(r'[^\d.]', '', regex=True).astype(float)
-        if 'Round Size' in df.columns :
-            df['Round Size'] = df['Round Size'].replace(r'[^\d]', '', regex=True).astype(float)
-        
-        # 2.b. Special treatment of Unrealized Value because we want to flag where we don't know the actual value
-        # We'll iterate through and force "Unrealized" and "Net Value" to zero AFTER we have made a note that the
-        #.   value isn't known in a new column called "Unknown Value"
-        # insert in a specific order for ease of reference
-        if 'Valuation Unknown' not in df.columns :
-            df.insert(3, "Valuation Unknown", False)
-
-        num_locked = 0
-        invested_locked = 0
-        for index, row in df.iterrows():
-            original_value = row['Unrealized Value']
-            if original_value == "Locked" :
-                df.loc[index, "Valuation Unknown"] = True
-                df.loc[index, "Unrealized Value"] = 0
-                df.loc[index, "Net Value"] = 0
-                num_locked += 1
-                invested_locked += df.loc[index, "Invested"]
-       
-        # Now convert whole columns for Unrealized Value and Net Value now that have gathered which are locked (Forcing
-        # Locked to zero
-        df["Net Value"] = df["Net Value"].replace(r'[^\d.]', '', regex=True).astype(float) 
-        df["Unrealized Value"] = df["Unrealized Value"].replace(r'[^\d.]', '', regex=True).astype(float) 
-        df['Real Multiple'] = (df['Realized Value']+df['Unrealized Value'])/df['Invested']
-
-        # Calculate basic XIRR for values - need to replace this with my proper logic I think later
-        # improvement would be where some realised value to look at the financial information in AngelList and put in the other data to calculate this more clearly (overwriting this)
-        now = datetime.now()
-        df['XIRR'] = 0.0  # Set column to zero as a float
-        df['XIRR'] = df.apply(calculate_row_xirr, axis=1, now=now)
-        # for index, row in df.iterrows():            
-        #     if row['Net Value'] > 0: # Ignore calculating if net value is 0, ie leave XIRR as 0.0 for these
-        #         try:
-        #             dates = [row['Invest Date'], now]
-        #             amounts = [-row['Invested'], row['Net Value']]
-        #             df.loc[index, 'XIRR'] = xirr(dates, amounts)
-        #         except Exception as e:
-        #             print(f"Error calculating XIRR for row {index}: {e}")
-        #             df.loc[index, 'XIRR'] = float('nan')  # or some other appropriate value
-        
-        # 2.a.2 Move some columns 
-        name_column_index = df.columns.get_loc('Company/Fund')
-        # insert Multiple after and remove the prior position 
-        df.insert(name_column_index+1, 'Multiple', df.pop('Multiple'))
-        name_column_index = df.columns.get_loc('Invested')
-        # insert Multiple after and remove the prior position 
-        df.insert(name_column_index+1, 'Net Value', df.pop('Net Value'))
-
-        #2.c. Calculate all the summary values
-        # prompt: Filter the results to show only where Multiple > 1 and then create a completely new dataframe with a row called 'Multiple > 1' and as columns 'Count', 'Invested', 'Realized', 'UnRealized', 'Multiple', 'Percentage' have values that are the count of the number of results, the sum of the amount invested, the sum of the Realized, the sum of the Unrealized, the ratio of (UnRealised + Realised)/Invested, and a % that represents the ratio of the amount invested divided by the total sum of invested capital before the filter was applied
-        # Output: Count, %, Invested, Realized, UnRealized, Multiple
-        # We want to create the following slices of data:
-        # Totals - no Filter
-        # Realized at >=1x- Filtered: Status is Realized and Real Multiple >= 1
-        # Realized at <1x - Filtered: Status is Realized and Real Multiple <1
-        # Locked:         - Filtered: Valuation Unknown = True
-        # Marked Up:      - Filtered: Valuation Unknown is not True and Real Multiple >=1
-        # Not marked up:  - Filtered: Valuation Unknown is not True and Real Multiple < 1
-        # Check that sum of all but Totals = Totals
-        row_names = ['Totals', 'Realized >=1x', 'Realized <1x', 'Locked', 'Marked Up', 'Not Marked Up']
-        # iterate over the row names and run the searches
-        for i in range(len(row_names)):
-            if row_names[i] == 'Totals':
-                filtered_df = df
-            elif row_names[i] == 'Realized >=1x':
-                filtered_df = df[(df['Status'] == 'Realized') & (df['Real Multiple'] >= 1)]
-            elif row_names[i] == 'Realized <1x':
-                filtered_df = df[(df['Status'] == 'Realized') & (df['Real Multiple'] < 1)]
-            elif row_names[i] == 'Locked':
-                filtered_df = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == True)]
-            elif row_names[i] == 'Marked Up':
-                filtered_df = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == False) & (df['Real Multiple'] >= 1)]
-            elif row_names[i] == 'Not Marked Up':
-                filtered_df = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == False) & (df['Real Multiple'] < 1)]
-
-            # Calculate summary statistics
-            count = len(filtered_df)
-            invested_sum = filtered_df['Invested'].sum()
-            realized_sum = filtered_df['Realized Value'].sum()
-            unrealized_sum = filtered_df['Unrealized Value'].sum()
-            multiple = (unrealized_sum + realized_sum) / invested_sum if invested_sum != 0 else 0  # Handle potential division by zero
-            if row_names[i] == 'Totals': # Only do this once and can reuse this value in further calculations
-                total_invested_original = invested_sum
-            percentage = (invested_sum / total_invested_original) * 100 if total_invested_original !=0 else 0
-
-            top_companies = filtered_df.sort_values(by='Real Multiple', ascending=False).head(5)
-            examples = ""
-            for index, row in top_companies.iterrows():
-                examples += f"{row['Company/Fund']} ({row['Real Multiple']:.2f}x), "
-
-            # Remove the trailing comma and space
-            examples = examples[:-2]
-
-            # Create a new DataFrame for the summary
-            summary_data = {'Category' : [row_names[i]], 'Count': [count], 'Percentage': [percentage], 'Invested': [invested_sum],
-                            'Realized': [realized_sum], 'Unrealized': [unrealized_sum], 'Multiple': [multiple], 'Examples': [examples] }
-            if row_names[i] == 'Totals': # Create the table otherwise append
-                summary_df = pd.DataFrame(summary_data)
-            else:
-                summary_df = pd.concat([summary_df, pd.DataFrame(summary_data)], ignore_index=True)
-
-        # 2.d Calculate lead statistics by aggregating data
-        aggregated_df = df.groupby('Lead').agg(
-            total_investments=('Company/Fund', 'size'),
-            sum_value=('Unrealized Value', 'sum')
-        ).reset_index()
-        num_leads = len(aggregated_df)
-        # Exclude where no value as sum (result would be infinite)
-        aggregated_df = aggregated_df[aggregated_df["sum_value"] != 0]
-        # Calculate how many there are
-        num_zero_value_leads = num_leads - len(aggregated_df)
+    # 2. Process all the data
+        df, summary_df, num_uniques, num_leads, num_zero_value_leads, num_locked = process_and_summarize_data(df)
 
         # Set session state values for other screens
         st.session_state.df = df
         st.session_state.sumdf = summary_df
 
         st.session_state.num_uniques = num_uniques
-#       st.session_state.total_investments = total_investments
         st.session_state.num_leads = num_leads
         st.session_state.num_zero_value_leads = num_zero_value_leads
         st.session_state.num_locked = num_locked
@@ -383,7 +282,7 @@ elif option == "Stats":
             locked_value = total_value - sumdf.loc[sumdf['Category'] == 'Totals', 'Unrealized'].iloc[0]
             st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Locked', 'Unrealized'] = float(locked_value)
             st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Totals', 'Unrealized'] = total_value
-            c.metric(label="Total Value $",value=format_currency(total_value), border=True)
+            c.metric(label="Total Value $",value=format_currency_dollars_only(total_value), border=True)
             d.metric(label="Multiple (x)",value=format_multiple(st.session_state.total_value/sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]), border=True)
 
             # Calculate overall XIRR
@@ -393,23 +292,13 @@ elif option == "Stats":
                 h.metric(label="IRR %",value=format_percent(overall_XIRR), border=True)
             else:
                 h.metric(label="IRR %",value=format_percent(st.session_state.overall_XIRR), border=True)
-        e.metric(label="Invested $",value=format_currency(sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]), border=True)
+        e.metric(label="Invested $",value=format_currency_dollars_only(sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]), border=True)
         f.metric(label="Syndicates Invested",value=st.session_state.num_leads, border=True)
         g.metric(label="Syndicates no value info",value=st.session_state.num_zero_value_leads, border=True)
 
         # Neatly format everything
-        st.data_editor(
-            st.session_state.sumdf,
-                    column_config= {
-                    "Percentage": st.column_config.NumberColumn(
-                        "Percentage", help="Percentage of all invested capital", format="%.1d"
-                    ),
-                    "Multiple": st.column_config.NumberColumn(
-                        "Multiple", help="Multiple expressed as total value (realised and unrealised) / invested amount", format="%.2f x"
-                    )
-                    },
-            hide_index=True,
-        )
+        summary_styled = st.session_state.sumdf.style.format({'Percentage': format_percent, 'Invested': format_currency, 'Realized': format_currency, 'Unrealized': format_currency, 'Multiple': format_multiple})
+        st.dataframe(summary_styled, hide_index=True)
 
 elif option == "Top Investments":
     st.subheader("Top Investments", divider=True)
@@ -423,33 +312,47 @@ elif option == "Top Investments":
 
         # Load the data from the session state
         df = st.session_state.df
-        filtered_df = df[df['Multiple'] > 1]
-        sorted_df = filtered_df.dropna(subset=['Multiple']).sort_values(by='Multiple', ascending=False)
+        filtered_df = df[df['Real Multiple'] > 1]
+        sorted_df = filtered_df.dropna(subset=['Real Multiple']).sort_values(by='Real Multiple', ascending=False)
 
         # Get ready for screen display - drop columns and format
         # Drop the filtered columns
-        sorted_df = sorted_df.drop(columns=['Status','Valuation Unknown', 'Real Multiple'])
+        sorted_df = sorted_df.drop(columns=['Status','Valuation Unknown', 'Multiple', 'Round Size'])
+        
+        # Reorder columns to place 'Real Multiple' and 'XIRR' after 'Company/Fund'
+        cols = sorted_df.columns.tolist()
+        if 'Real Multiple' in cols and 'XIRR' in cols and 'Company/Fund' in cols :
+            cols.remove('Real Multiple')
+            cols.remove('XIRR')
+            company_index = cols.index('Company/Fund')
+            cols.insert(company_index + 1, 'Real Multiple')
+            cols.insert(company_index + 2, 'XIRR')
+            sorted_df = sorted_df[cols]
+        
         # Get the top X investments
         top_X_num = sorted_df.head(top_filter)
+        top_X_num['XIRR'] = top_X_num['XIRR']*100
 
         # Merge the cleaned dataset with the sample dataset using 'Company/Fund' as the key
         if st.session_state.has_enhanced_data_file:
             enhanced_df = pd.merge(top_X_num, st.session_state.df2, on='Company/Fund', how='left')
-            enhanced_df['XIRR'] = enhanced_df['XIRR']*100
 
             # Apply the formatting using Pandas Styler - this doesn't seem to work
-            styled_df = enhanced_df.style.format({'XIRR': format_percent, 'Invested' : format_currency, 'Multiple': format_multiple})
+            styled_df = enhanced_df.style.format({'XIRR': format_percent, 'Invested' : format_currency, 'Real Multiple': format_multiple})
 
             st.data_editor(
                 styled_df, 
                 column_config= {
+                    "Invest Date": st.column_config.DateColumn(
+                        "Invest Date", format="DD/MM/YYYY", help="The date of the investment"
+                    ), 
                     "URL": st.column_config.LinkColumn(
                         "Website", help="The link to the website for the company"
                     ),
                     "AngelList URL": st.column_config.LinkColumn(
                         "Website", help="The link to your AngelList investment record", display_text="AL Link"
                     ),
-                    "Multiple": st.column_config.NumberColumn(
+                    "Real Multiple": st.column_config.NumberColumn(
                         "Multiple", help="Multiple expressed as total value / invested amount", format="%.2f x"
                    ),
                     "Invested": st.column_config.NumberColumn(
@@ -475,7 +378,10 @@ elif option == "Top Investments":
             st.data_editor(
                 top_X_num, 
                 column_config= {
-                    "Multiple": st.column_config.NumberColumn(
+                    "Invest Date": st.column_config.DateColumn(
+                        "Invest Date", format="DD/MM/YYYY", help="The date of the investment"
+                    ), 
+                    "Real Multiple": st.column_config.NumberColumn(
                         "Multiple", help="Multiple expressed as total value / invested amount", format="%.1f x"
                     ),
                     "Invested": st.column_config.NumberColumn(
@@ -489,14 +395,17 @@ elif option == "Top Investments":
                     ), 
                     "Realized Value": st.column_config.NumberColumn(
                         "$ Received", help="Realized value as reported by AngelList (rounded to nearest whole number)", format="$%.0f"
-                    ) 
+                    ), 
+                    "XIRR": st.column_config.NumberColumn(
+                        "IRR", help="IRR for this investment", format="%.1f %%"
+                    )
                 },
                 hide_index=True,
             )
         # Show a tree graph that looks nice
         # Calculate sizes based on Net Value
         sizes = top_X_num['Net Value']
-        labels = [f"{company}\n({multiple:.1f}x)" for company, multiple in zip(top_X_num['Company/Fund'], top_X_num['Multiple'])]
+        labels = [f"{company}\n({multiple:.1f}x)" for company, multiple in zip(top_X_num['Company/Fund'], top_X_num['Real Multiple'])]
         colors = plt.cm.viridis(np.linspace(0, 0.8, len(top_X_num)))
 
         # Create the plot
@@ -658,7 +567,7 @@ elif option == "Year":
 
     # Clean 'Invest Date' column
     if 'Invest Date' in temp_df.columns:
-        temp_df['Invest Date'] = pd.to_datetime(temp_df['Invest Date'], errors='coerce')
+
         temp_df['Year'] = temp_df['Invest Date'].dt.year
 
     # Group by year
@@ -873,6 +782,8 @@ elif option == "Leads no markups":
 elif option == "Realized":
     st.subheader("Realized Investments", divider=True)
     st.markdown("Show all the deals that were exited either as a full loss (Dead) or with a (partial) return of capital as recorded by AngelList")
+    st.markdown("Note that IRR has not been recalculated here based on actual exit dates")
+    
     if st.session_state.has_data_file:
         # Load the data from the session state
         df = st.session_state.df
@@ -1097,12 +1008,9 @@ elif option == "Tax":
         escaped_phrases = [re.escape(phrase) for phrase in phrases_to_remove]
         # Create a regex pattern to match any of the phrases
         pattern = "|".join(escaped_phrases)
-
         
         # Apply the function to create the new 'Company/Fund' column
         df3['Company/Fund'] = df3.apply(lambda row: "" if row['Transaction'] in ['Deposit', 'Refill'] else extract_company_name(row['Description'], pattern), axis=1)
-
-
         df3['New Date'] = df3['Date'].apply(convert_date)
 
         # prompt: Show all the values where there is one or more matches on Company/Fund, sort them by Company/Fund but also by Date in reverse order. Drop the Balance column and show the Company/Fund coloumn first. Don't show any values where there isn't an entry on the Company/Fund column. Also convert the date to a date field first. As a final step only show company/Fund values where there was at least one Disbursement
