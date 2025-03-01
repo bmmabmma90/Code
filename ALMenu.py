@@ -10,7 +10,19 @@ import squarify
 import numpy as np # User for colour stuff
 import re
 from pyxirr import xirr
-from datetime import datetime
+from datetime import datetime, date
+from AL_Functions import (
+    format_currency,
+    format_multiple,
+    format_percent,
+    format_percentage,
+    calculate_portfolio_xirr,
+    show_top_X_increase_and_multiple,
+    show_top_X_names_based_on_multiple_by_Lead,
+    show_realised_based_on_Lead,
+    extract_company_name,
+    convert_date,
+)
 
 st.set_page_config(layout="wide")
 st.title("AngelList Startup Data Analyser")
@@ -126,6 +138,68 @@ elif option == "Load Data":
         st.session_state.has_data_file = False
         st.session_state.has_enhanced_data_file = False
 
+    # Add Overwrite button - add the correct logic
+    # Note that doesn't deal with double/triple ups - if that is the case it needs a way of overwriting just the valuation data for the right value
+    if st.button("Overwrite Values", type="primary") :
+        if st.session_state.has_enhanced_data_file: #Otherwise we have nothing to overwrite with
+                
+            # Check if 'New Value' column exists in df2
+            if 'New Value' in df2.columns:
+                # Ensure both dataframes have 'Company/Fund'
+                if 'Company/Fund' in df.columns and 'Company/Fund' in df2.columns:
+                    # Merge dataframes on 'Company/Fund' to find matching rows
+                    merged_df = pd.merge(df, df2[['Company/Fund', 'Invest Date', 'New Value']], on=['Company/Fund','Invest Date'], how='outer', suffixes=('', '_df2'))
+                    # Filter out rows where 'New Value' is not None
+                    rows_to_update = merged_df[merged_df['New Value'].notnull()]
+                    # Create a list to store changes for display
+                    changes_list = []
+
+                    # Update 'Net Value' in df with 'New Value' from df2
+                    for index, row in rows_to_update.iterrows():
+                        # Find the index in df where Company/Fund matches
+                        df_index = df[df['Company/Fund'] == row['Company/Fund']].index[0]
+                        # Store old values
+                        old_net_value = df.loc[df_index, 'Net Value']
+                        old_real_multiple = 0
+                        old_XIRR = 0
+                        if 'Real Multiple' in df.columns :
+                            old_real_multiple = df.loc[df_index, 'Real Multiple']
+                        if 'XIRR' in df.columns :
+                            old_xirr = df.loc[df_index, 'XIRR']
+                        # Recalculate new values - but also they need to be in the right format so we probably need to do all our normalisation code - maybe put it in a separate file somewhere?
+                        df.loc[df_index, 'Net Value'] = float(row['New Value'])
+                        df.loc[df_index, 'Real Multiple'] = row['New Value']/df.loc[df_index, 'Invested']
+                        df.loc[df_index, 'XIRR'] = xirr([df.loc[df_index, 'Invest Date'], datetime.now()], [-df.loc[df_index, 'Invested'], row['New Value']])
+
+                        # Recalculate all the data again to match the new values including IRR etc - but has to be in the right order etc
+
+                        # Record the change
+                        changes_list.append({
+                            'Company/Fund': row['Company/Fund'],
+                            'Invest Date' : row['Invest Date'],
+                            'Old Value': old_net_value,
+                            'New Value': row['New Value'],
+                            'Old Real Multiple' :old_real_multiple,
+                            'New Real Multiple' : row['Real Multiple'],
+                            'old_xirr' : old_xirr,
+                            'New XIRR' : row['XIRR']
+                        })
+
+                    # Display the changes in a DataFrame
+                    if changes_list:
+                        st.write("Values Overwritten:")
+                        changes_df = pd.DataFrame(changes_list)
+                        st.dataframe(changes_df)
+
+  
+                    else:
+                        st.write("No changes made. No matching values found or 'New Value' is empty.")
+                else:
+                    st.write("Error: 'Company/Fund' column is missing in one or both DataFrames.")
+                st.session_state.df = df
+                st.session_state.df2 = df2
+            else : st.write("No 'New Value' to replace values with in the data set")
+        else : st.write("No data file to replace values with")
     # Action 2 is all the data normalisation and analysis logic
     # Only do it if there is data in the data frame otherwise suggest load the data
     if st.session_state.has_data_file:
@@ -134,7 +208,7 @@ elif option == "Load Data":
     
     # Do all the data processing    
     # 1. Drop the data we don't analyse for easy display / debugging - 'Round', 'Market', 'Round Size', 'Invest Date', 'Instrument'
-        todrop = { 'Investment Entity',
+        todrop = { 'Investment Entity', 'Invest Date_y', # This is a special value caused by the outer join 
                 'Investment Type', 'Fund Name', 'Allocation',  
                 'Valuation or Cap Type', 'Valuation or Cap', 
                 'Discount', 'Carry', 'Share Class'}
@@ -185,11 +259,11 @@ elif option == "Load Data":
         df["Unrealized Value"] = df["Unrealized Value"].replace(r'[^\d.]', '', regex=True).astype(float) 
         df['Real Multiple'] = (df['Realized Value']+df['Unrealized Value'])/df['Invested']
 
-        # Calculate basic XIRR for values 
+        # Calculate basic XIRR for values - need to replace this with my proper logic I think later
         # improvement would be where some realised value to look at the financial information in AngelList and put in the other data to calculate this more clearly (overwriting this)
         now = datetime.now()
         df['XIRR'] = 0.0  # Set column to zero as a float
-        for index, row in df.iterrows():
+        for index, row in df.iterrows():            
             if row['Net Value'] > 0: # Ignore calculating if net value is 0, ie leave XIRR as 0.0 for these
                 try:
                     dates = [row['Invest Date'], now]
@@ -288,14 +362,6 @@ elif option == "Stats":
     total_value = st.number_input("Insert the total value from AngelList")
         
     if st.session_state.has_data_file:
-        # Write all the outputs to the screen
-        def format_currency(amount) :
-            return '${:,.2f}'.format(amount)
-        def format_multiple(amount) :
-            return '{:.2f}x'.format(amount)
-        def format_percent(amount) :
-            return '{:.1%}'.format(amount)
-
         # Calculate the total value using an estimate
 
         a, b, f, g = st.columns(4) # Macro stats - investments + companies plus syndicate stats
@@ -308,35 +374,13 @@ elif option == "Stats":
         if total_value > 0:
             st.session_state.total_value = total_value
             locked_value = total_value - sumdf.loc[sumdf['Category'] == 'Totals', 'Unrealized'].iloc[0]
-            st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Locked', 'Unrealized'] = locked_value
+            st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Locked', 'Unrealized'] = float(locked_value)
             st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Totals', 'Unrealized'] = total_value
             c.metric(label="Total Value $",value=format_currency(total_value), border=True)
             d.metric(label="Multiple (x)",value=format_multiple(st.session_state.total_value/sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]), border=True)
 
             # Calculate overall XIRR
-            if 'overall_XIRR' not in st.session_state :
-                def calculate_portfolio_xirr(df, total_net_value):
-                    """Calculates the overall XIRR of the whole portfolio.
-                    Args:
-                        df: DataFrame with 'Invest Date', 'Invested' but uses total_net_value to do the total calculation.
-                    Returns:
-                        The portfolio XIRR as a float, or None if calculation fails.
-                    """
-                    try:
-                        # Combine all cashflows into a single list
-                        all_cashflows = []
-                        for index, row in df.iterrows():
-                            if pd.notna(row['Invest Date']):
-                                all_cashflows.append((row['Invest Date'], -row['Invested']))
-                        # Add the total value as at now    
-                        all_cashflows.append((datetime.now(), total_net_value))
-                        # Calculate the overall portfolio XIRR
-                        portfolio_xirr = xirr(all_cashflows)
-                        return portfolio_xirr
-                    except Exception as e:
-                        st.write(f"Error calculating portfolio XIRR: {e}")
-                        return None
-                    
+            if 'overall_XIRR' not in st.session_state :                    
                 overall_XIRR = calculate_portfolio_xirr(st.session_state.df, total_value)
                 st.session_state.overall_XIRR = overall_XIRR
                 h.metric(label="IRR %",value=format_percent(overall_XIRR), border=True)
@@ -385,9 +429,7 @@ elif option == "Top Investments":
         if st.session_state.has_enhanced_data_file:
             enhanced_df = pd.merge(top_X_num, st.session_state.df2, on='Company/Fund', how='left')
         
-            # format it nicely
-            def format_percentage(val): return "{:.2%}".format(val*100) # Formats to 2 decimal places 
-            # Apply the formatting using Pandas Styler 
+            # Apply the formatting using Pandas Styler
             styled_df = enhanced_df.style.format({'XIRR': format_percentage})
 
             st.data_editor(
@@ -494,7 +536,7 @@ elif option == "Top Investments":
         ax.set_title("Waterfall Chart of Value Increase by Investment (Over 1%)")
         #plt.legend() # No longer needed since labels are only set for the first bar
         plt.tight_layout()
-        st.pyplot(plt.get_figure())
+        st.pyplot(fig)
 
     else:
         st.write("Please Load Data file first before proceeding")  
@@ -508,34 +550,19 @@ elif option == "Round":
     # Group by 'Round' and sum 'Invested'
     temp_df = st.session_state.df.copy()
 
-    temp_df["Increase"] = temp_df["Net Value"] - temp_df["Invested"]
+    temp_df["Increase"] = temp_df["Net Value"] - temp_df["Invested"]    
     grouped = temp_df.groupby("Round", as_index=False).agg({"Invested":"sum", "Increase":"sum"})
     invested_sum = grouped["Invested"].sum()
     value_sum = grouped[grouped["Increase"] > 0]["Increase"].sum()
     grouped["Perc by Invested"] = grouped["Invested"]/invested_sum * 100 if invested_sum !=0 else 0
     grouped["Perc by Increase"] = grouped["Increase"]/value_sum * 100 if invested_sum !=0 else 0
 
-    def show_top_X_increase_and_multiple(df, round_name):
-        round_df = df[df["Round"] == round_name].sort_values(by="Increase", ascending=False)
-        topX = 5
-        # Create a list to store the formatted strings
-        top_X_examples_list = []
-        for index, row in round_df.head(topX).iterrows():
-            company_fund = row["Company/Fund"]
-            real_multiple = row["Real Multiple"]
-            formatted_string = f"{company_fund} ({real_multiple:.2f}x)"
-            top_X_examples_list.append(formatted_string)
-
-        # Join the formatted strings with commas
-        top_X_examples = ", ".join(top_X_examples_list)
-        return top_X_examples
-
     # Create a new column in the grouped dataframe to store the examples
     grouped["Examples"] = ""
 
     # Iterate through unique rounds and update the "Examples" column
     for round_name in temp_df["Round"].unique():
-        examples = show_top_X_increase_and_multiple(temp_df, round_name)
+        examples = show_top_X_increase_and_multiple(temp_df, round_name, 'Round')
         grouped.loc[grouped["Round"] == round_name, "Examples"] = examples
  
     st.write(grouped)
@@ -571,34 +598,19 @@ elif option == "Market":
 
     temp_df = st.session_state.df.copy()
 
-    temp_df["Increase"] = temp_df["Net Value"] - temp_df["Invested"]
+    temp_df["Increase"] = temp_df["Net Value"] - temp_df["Invested"]    
     grouped = temp_df.groupby("Market", as_index=False).agg({"Invested":"sum", "Increase":"sum"})
     invested_sum = grouped["Invested"].sum()
     value_sum = grouped[grouped["Increase"] > 0]["Increase"].sum()
     grouped["Perc by Invested"] = grouped["Invested"]/invested_sum * 100 if invested_sum !=0 else 0
     grouped["Perc by Increase"] = grouped["Increase"]/value_sum * 100 if invested_sum !=0 else 0
 
-    def show_top_X_increase_and_multiple(df, round_name):
-        round_df = df[df["Market"] == round_name].sort_values(by="Increase", ascending=False)
-        topX = 5
-        # Create a list to store the formatted strings
-        top_X_examples_list = []
-        for index, row in round_df.head(topX).iterrows():
-            company_fund = row["Company/Fund"]
-            real_multiple = row["Real Multiple"]
-            formatted_string = f"{company_fund} ({real_multiple:.2f}x)"
-            top_X_examples_list.append(formatted_string)
-
-        # Join the formatted strings with commas
-        top_X_examples = ", ".join(top_X_examples_list)
-        return top_X_examples
-
     # Create a new column in the grouped dataframe to store the examples
     grouped["Examples"] = ""
 
     # Iterate through unique rounds and update the "Examples" column
     for round_name in temp_df["Market"].unique():
-        examples = show_top_X_increase_and_multiple(temp_df, round_name)
+        examples = show_top_X_increase_and_multiple(temp_df, round_name, 'Market')
         grouped.loc[grouped["Market"] == round_name, "Examples"] = examples
  
     st.write(grouped)
@@ -648,7 +660,7 @@ elif option == "Year":
             Total_Value=('Net Value', 'sum'),
             Leads=('Lead', 'nunique')
         ).reset_index()
-        
+
         summary_df['Multiple'] = summary_df['Total_Value']/summary_df['Invest_Value']
 
         # Neatly format everything
@@ -714,7 +726,7 @@ elif option == "Year":
         # Sort by Invest Date before calculating cumulative sum
         temp_df.sort_values(by='Invest Date', inplace=True)
         # Calculate cumulative investment
-        temp_df['Cumulative Invested'] = temp_df['Invested'].cumsum()
+        temp_df['Cumulative Invested'] = temp_df['Invested'].cumsum()        
             # Create the figure and axes
         fig, ax1 = plt.subplots(figsize=(12, 6))
         # Plot the scatter plot on the first axis
@@ -732,7 +744,7 @@ elif option == "Year":
         ax2.tick_params(axis='y', labelcolor='orange')
         # Format y-axis ticks as currency
         formatter = mtick.FormatStrFormatter('$%1.0f')
-        ax1.yaxis.set_major_formatter(formatter)
+        ax1.yaxis.set_major_formatter(formatter)        
         ax2.yaxis.set_major_formatter(formatter)
         # Set title and rotate x-axis labels
         plt.title('Investment amount over time')
@@ -790,32 +802,6 @@ elif option == "Lead Stats":
 
         # Shows the companies with the top multiples in 'Company (X.X)x, ...' format by matching on the Lead = mname
         # Not sure how to generalise this but if I can then can reduce file size
-        def show_top_X_names_based_on_multiple_by_Lead(top_values, df, mname):
-            temp_df = df[df["Lead"] == mname].sort_values(by="Real Multiple", ascending=False)
-            # Create a list to store the formatted strings
-            top_X_examples_list = []
-            for index, row in temp_df.head(top_values).iterrows():
-                        company_fund = row["Company/Fund"]
-                        real_multiple = row["Real Multiple"]
-                        formatted_string = f"{company_fund} ({real_multiple:.2f}x)"
-                        top_X_examples_list.append(formatted_string)
-            # Join the formatted strings with commas
-            top_X_examples = ", ".join(top_X_examples_list)
-            return top_X_examples
-
-        def show_realised_based_on_Lead(top_values, df, mname):
-            filtered_df = df[df['Status'] == 'Realized']
-            temp_df = filtered_df[filtered_df["Lead"] == mname].sort_values(by="Real Multiple", ascending=True)
-            # Create a list to store the formatted strings
-            top_X_examples_list = []
-            for index, row in temp_df.head(top_values).iterrows():
-                        company_fund = row["Company/Fund"]
-                        real_multiple = row["Real Multiple"]
-                        formatted_string = f"{company_fund} ({real_multiple:.2f}x)"
-                        top_X_examples_list.append(formatted_string)
-            # Join the formatted strings with commas
-            top_X_examples = ", ".join(top_X_examples_list)
-            return top_X_examples
 
         # Create a new column in the grouped dataframe to store the examples
         top_X_num["Best"] = ""
@@ -832,7 +818,7 @@ elif option == "Lead Stats":
         # Neatly format everything
         st.data_editor(
             top_X_num, 
-            column_config= {
+            column_config= {                
                 "total_investments": st.column_config.NumberColumn(
                     "Investments", help="The total number of investments", format="%d"
                 ),
@@ -883,7 +869,7 @@ elif option == "Leads no markups":
         # Sort based on locked_percentage descending
         result = filtered_df.sort_values(by='locked_percentage', ascending=False)
         result = result.sort_values(by='locked_count', ascending=False)
-        
+
  #       # Take top values
  #       result = result.nlargest(top_filter, 'Lead')      
         # drop superfluous columns
@@ -923,7 +909,7 @@ elif option == "Realized":
         result_a = status_realized_or_dead.copy()
         result_a["Profit"] = result_a["Realized Value"] - result_a["Invested"]
         result_a['Real Multiple'] = result_a['Realized Value']/result_a['Invested']
-        result_sorted = result_a.sort_values(by='Real Multiple', ascending=False)
+        result_sorted = result_a.sort_values(by='Real Multiple', ascending=False)        
 
         # reorder some columns
         # insert Multiple after and remove the prior position 
@@ -1031,7 +1017,7 @@ elif option == "Graphs":
             fig, ax = plt.subplots()
             sns.histplot(data=data_mult, bins=20, color='skyblue')
             ax.set_title('Distribution of Investment Multiples (>1x)')
-            ax.set_xlabel('Multiple')
+            ax.set_xlabel('Multiple')            
             ax.set_ylabel('Count')    
             st.pyplot(fig)
             
@@ -1137,31 +1123,11 @@ elif option == "Tax":
         # Create a regex pattern to match any of the phrases
         pattern = "|".join(escaped_phrases)
 
-        def extract_company_name(description, pattern):
-            if pd.isna(description):
-                return ""
-            # Remove anything after a hyphen
-            description = re.split(r"-", description, maxsplit=1)[0]
-            # Remove the brackets and anything in between
-            description = re.sub(r"\(.*?\)", "", description)
-            # Remove the phrases using regex substitution
-            return re.sub(pattern, "", description).strip() #.strip() removes leading and trailing whitespace.
-
+        
         # Apply the function to create the new 'Company/Fund' column
         df3['Company/Fund'] = df3.apply(lambda row: "" if row['Transaction'] in ['Deposit', 'Refill'] else extract_company_name(row['Description'], pattern), axis=1)
 
-        # Create a new date called 'New Date' that is a real sortable date value
-        def convert_date(date_str):
-            if pd.isna(date_str):
-                return pd.NaT  # Return Not a Time value for missing dates
-            try:
-                return pd.to_datetime(date_str)
-            except ValueError:
-                try:
-                    return pd.to_datetime(date_str, format='%m/%d/%y')
-                except ValueError:
-                    print(f"Could not convert date: {date_str}")
-                    return pd.NaT  # Return NaT for unconvertible dates
+
         df3['New Date'] = df3['Date'].apply(convert_date)
 
         # prompt: Show all the values where there is one or more matches on Company/Fund, sort them by Company/Fund but also by Date in reverse order. Drop the Balance column and show the Company/Fund coloumn first. Don't show any values where there isn't an entry on the Company/Fund column. Also convert the date to a date field first. As a final step only show company/Fund values where there was at least one Disbursement
