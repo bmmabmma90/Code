@@ -261,10 +261,15 @@ elif option == "Load Data":
 
 elif option == "Stats":
     st.subheader("Investment Statistics", divider=True)
-    st.markdown("Show statistics across the portfolio.  NB: You will need to go into AngelList to get the total portfolio value which is then used to work out the value increase/decrease of all 'Locked' investments")
+    st.markdown("Show statistics across the portfolio.  NB: If you have 'Locked' data (eg from AngelList' you will need to go into AngelList to get the total portfolio value which is then used to work out the value increase/decrease of all 'Locked' investments")
     # Write all the outputs to the screen
-    total_value = st.number_input("Insert the total value from AngelList")
-        
+
+    sumdf = st.session_state.sumdf
+    if st.session_state.num_locked > 0 :
+        total_value = st.number_input("Insert the total value from AngelList")
+    else:
+        total_value = sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]
+
     if st.session_state.has_data_file:
         # Calculate the total value using an estimate
 

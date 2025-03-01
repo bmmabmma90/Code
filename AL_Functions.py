@@ -210,6 +210,7 @@ def process_and_summarize_data(df):
 
         # Calculate summary statistics
         count = len(filtered_df)
+        count_unique = len(filtered_df['Company/Fund'].unique())
         invested_sum = filtered_df['Invested'].sum()
         realized_sum = filtered_df['Realized Value'].sum()
         unrealized_sum = filtered_df['Unrealized Value'].sum()
@@ -227,7 +228,8 @@ def process_and_summarize_data(df):
         examples = examples[:-2]
 
         # Create a new DataFrame for the summary
-        summary_data = {'Category' : [row_names[i]], 'Count': [count], 'Percentage': [percentage], 'Invested': [invested_sum],
+        summary_data = {'Category' : [row_names[i]], 'Investments': [count], 'Companies': [count_unique],
+                        'Percentage': [percentage], 'Invested': [invested_sum],
                         'Realized': [realized_sum], 'Unrealized': [unrealized_sum], 'Multiple': [multiple], 'Examples': [examples] }
         if row_names[i] == 'Totals': # Create the table otherwise append
             summary_df = pd.DataFrame(summary_data)
