@@ -14,6 +14,7 @@ from AL_Functions import (
     format_multiple,
     format_percent,
     calculate_row_xirr,
+    calculate_company_xirr,
     calculate_portfolio_xirr,
     process_and_summarize_data,
     show_top_X_increase_and_multiple,
@@ -28,7 +29,7 @@ st.title("AngelList Startup Data Analyser")
 
 # Set has no data file until one is read in correctly
 if 'force_load' not in st.session_state: 
-    st.session_state.force_load = False
+    st.session_state.force_load = True
 if 'advanced_user' not in st.session_state:
     st.session_state.advanced_user = True
 if 'has_data_file' not in st.session_state: 
@@ -52,7 +53,7 @@ with st.sidebar:
         if st.session_state.advanced_user :
             option = st.selectbox(
                 "Choose an option:",
-                ("About", "Load Data", "Overwrite", "Stats", "Top Investments", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no markups", "Graphs", "Tax")
+                ("About", "Load Data", "Overwrite", "Stats", "Top Investments", "Top by Company", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no markups", "Graphs", "Tax")
             )
         else:
             option = st.selectbox(
@@ -177,7 +178,8 @@ elif option == "Load Data":
     force_load = st.session_state.force_load
 
     if force_load == True:
-        df = pd.read_csv(r"/Users/deepseek/Downloads/ben-armstrong_angellist_investments_2025_02_21.csv", header=1, skip_blank_lines=True)
+        df = pd.read_csv(r"/Users/deepseek/Downloads/2021.csv", header=1, skip_blank_lines=True)
+#       df = pd.read_csv(r"/Users/deepseek/Downloads/ben-armstrong_angellist_investments_2025_02_21.csv", header=1, skip_blank_lines=True)
         st.session_state.has_data_file = True
         st.session_state.df = df
         with st.container(height=200):
@@ -250,6 +252,8 @@ elif option == "Load Data":
     # 2. Process all the data
         df, summary_df, num_uniques, num_leads, num_zero_value_leads, num_locked = process_and_summarize_data(df)
 
+ #      st.dataframe(summary_df)
+ #      print(summary_df)
         # Set session state values for other screens
         st.session_state.df = df
         st.session_state.sumdf = summary_df
@@ -267,8 +271,9 @@ elif option == "Stats":
     sumdf = st.session_state.sumdf
     if st.session_state.num_locked > 0 :
         total_value = st.number_input("Insert the total value from AngelList")
-    else:
-        total_value = sumdf.loc[sumdf['Category'] == 'Totals', 'Value'].iloc[0]
+    else :
+        print(sumdf)
+        total_value = sumdf.loc[sumdf['Category'] == 'Totals', 'Realized'].iloc[0] + sumdf.loc[sumdf['Category'] == 'Totals', 'Unrealized'].iloc[0]
 
     if st.session_state.has_data_file:
         # Calculate the total value using an estimate
@@ -278,7 +283,7 @@ elif option == "Stats":
 #       f, g = st.columns(2) # Syndicate info
 
         sumdf = st.session_state.sumdf
-        a.metric(label="Investments", value=sumdf.loc[sumdf['Category'] == 'Totals', 'Count'].iloc[0], border=True)
+        a.metric(label="Investments", value=sumdf.loc[sumdf['Category'] == 'Totals', 'Investments'].iloc[0], border=True)
         b.metric(label="Companies", value=st.session_state.num_uniques, border=True)
         if total_value > 0:
             st.session_state.total_value = total_value
@@ -334,7 +339,7 @@ elif option == "Top Investments":
         
         # Get the top X investments
         top_X_num = sorted_df.head(top_filter)
-        top_X_num['XIRR'] = top_X_num['XIRR']*100
+        top_X_num.loc[:,'XIRR'] = top_X_num['XIRR']*100
 
         # Merge the cleaned dataset with the sample dataset using 'Company/Fund' as the key
         if st.session_state.has_enhanced_data_file:
@@ -443,20 +448,266 @@ elif option == "Top Investments":
         labels = sorted_df['Company/Fund'].tolist()
         values = sorted_df['Val increase'].tolist()
         # Plot the waterfall chart
-        ax.set_ylim(0, total_increase - others_increase) # Set y-axis limit for clarity
+
+        # Convert values to millions
+        values_millions = [v / 1e6 for v in values]  # Divide each value by 1 million
+
+        # Plot the waterfall chart
+        # Calculate new ylim based on millions
+        total_increase_millions = total_increase / 1e6
+        others_increase_millions = others_increase / 1e6
+        ax.set_ylim(0, total_increase_millions - others_increase_millions)  # Set y-axis limit for clarity
+
+#        ax.set_ylim(0, total_increase - others_increase) # Set y-axis limit for clarity
         cmap = plt.get_cmap('coolwarm', total_entries)  # Use 'viridis' or any other colormap you like
         # Initialize the current value at 0 for the first bar
         current_value = 0
-        for i, (label, value) in enumerate(zip(labels, values)):
+        for i, (label, value) in enumerate(zip(labels, values_millions)):
             next_value = current_value + value
             ax.bar(i, value, bottom=current_value, label=label if i == 0 else "", color=cmap(i), alpha=0.7, width=0.8) # Set label only for the first bar
             current_value = next_value
-            ax.text(i, current_value*.9, f"{value:.0f}", ha='center', va='center')
+            ax.text(i, current_value*.9, f"${values[i]:,.0f}", ha='center', va='center')
 
         ax.set_xticks(range(len(labels)))
         ax.set_xticklabels(labels, rotation=45, ha='right')
-        ax.set_ylabel("Value Increase")
+        ax.set_ylabel("Value Increase ($ M)")
         ax.set_title("Waterfall Chart of Value Increase by Investment (Over 1%)")
+        #plt.legend() # No longer needed since labels are only set for the first bar
+        plt.tight_layout()
+        st.pyplot(fig)
+
+    else:
+        st.write("Please Load Data file first before proceeding")  
+
+elif option == "Top by Company":
+    st.subheader("Top Investments aggregated by Company", divider=True)
+    st.markdown('''This data will look at all the investments by company (ie aggregating multiple investments).
+
+You can use the slider to restrict the number of values shown on the screen
+    ''')
+    if st.session_state.has_data_file:
+        # Write all the outputs to the screen
+        top_filter = st.slider("Show how many",1,50,5)   
+        # Calculate the top X investments by multiple and show information for them
+
+        # Load the data from the session state
+        df = st.session_state.df
+
+        # Get ready for screen display - drop columns and format
+        # Drop the filtered columns
+        sorted_df = df.drop(columns=['Status','Valuation Unknown', 'Multiple', 'Round Size'])
+        
+
+
+        # Now aggregate all the investments by Company/Fund and then recalculate IRR and Multiples, Invested Amount, Etc
+        # Gets a little tricky with XIRR but as long as have all dates and amounts it should be okay
+        # Group by 'Company/Fund' and aggregate data
+        grouped = sorted_df.groupby('Company/Fund').agg(
+            Invested=('Invested', 'sum'),
+            Net_Value=('Net Value', 'sum'),
+            Unrealized=('Unrealized Value', 'sum'),
+            Realized_Value=('Net Value', 'sum'),
+            Realized=('Realized Value', 'sum'),
+            First_Invest_Date=('Invest Date', 'min'),  # don't use either of these values yet
+            Last_Invest_Date=('Invest Date', 'max') # this is the second not used
+        ).reset_index()
+
+        # Calculate 'Real Multiple' and 'XIRR'
+        grouped['Real Multiple'] = grouped['Net_Value'] / grouped['Invested']
+        # Calculate 'XIRR'
+
+        grouped['XIRR'] = 0.0
+        for index, row in grouped.iterrows():
+            # Get all transactions relating to this fund
+            all_transactions = df.loc[df['Company/Fund'] == row['Company/Fund']]
+            # Create a dataframe to store all the transactions
+
+        #    st.write(row['Company/Fund'])
+        #    st.write(all_transactions)
+            # Create a list to store all cash flows
+            company_xirr = 0.0
+            if all_transactions['Net Value'].iloc[0] > 0 : # If no positives then doesn't make sense
+                all_cashflows = []
+                for index, row in all_transactions.iterrows():
+                    all_cashflows.append((row['Invest Date'].to_pydatetime(), -row['Invested']))
+                # Add the Net value as exit value with time as now
+                all_cashflows.append((datetime.now(), all_transactions['Net Value'].iloc[0]))
+                # Calculate the xirr for this row, and store it in the overall dataframe
+                try:
+                    # Calculate the XIRR for this company
+                    company_xirr = calculate_company_xirr(all_cashflows)
+                except ValueError:
+                    company_xirr = 0.0
+                # Find the correct index to update in 'grouped'
+                company_name = all_transactions['Company/Fund'].iloc[0]  # Get the company name from all_transactions
+                index_to_update = grouped.index[grouped['Company/Fund'] == company_name]
+            grouped.loc[index_to_update[0], 'XIRR'] = company_xirr # Update the first match - should only be one
+ 
+        # sort the values
+        sorted_df = grouped.dropna(subset=['Real Multiple']).sort_values(by='Real Multiple', ascending=False)
+
+        # Get the top X investments
+        top_X_num = sorted_df.head(top_filter)
+        top_X_num.loc[:,'XIRR'] = top_X_num['XIRR']*100
+
+        # Reorder columns to place 'Real Multiple' and 'XIRR' after 'Company/Fund'
+        cols = top_X_num.columns.tolist()
+        if 'Real Multiple' in cols and 'XIRR' in cols and 'Company/Fund' in cols :
+            cols.remove('Real Multiple')
+            cols.remove('XIRR')
+            company_index = cols.index('Company/Fund')
+            cols.insert(company_index + 1, 'Real Multiple')
+            cols.insert(company_index + 2, 'XIRR')
+            top_X_num = top_X_num[cols]
+
+        # Merge the cleaned dataset with the sample dataset using 'Company/Fund' as the key
+        if st.session_state.has_enhanced_data_file:
+            enhanced_df = pd.merge(top_X_num, st.session_state.df2, on='Company/Fund', how='left')
+
+            # Apply the formatting using Pandas Styler - this doesn't seem to work
+            styled_df = enhanced_df.style.format({'XIRR': format_percent, 'Invested' : format_currency, 'Real Multiple': format_multiple})
+
+            st.data_editor(
+                styled_df, 
+                column_config= {
+                    "Invest Date": st.column_config.DateColumn(
+                        "Invest Date", format="DD/MM/YYYY", help="The date of the investment"
+                    ),
+                    "First_Invest_Date": st.column_config.DateColumn(
+                        "First Date", format="DD/MM/YYYY", help="The date of the first investment"
+                    ),
+                    "Last_Invest_Date": st.column_config.DateColumn(
+                        "Last Date", format="DD/MM/YYYY", help="The date of the last investment"
+                    ), 
+                    "URL": st.column_config.LinkColumn(
+                        "Website", help="The link to the website for the company"
+                    ),
+                    "AngelList URL": st.column_config.LinkColumn(
+                        "Website", help="The link to your AngelList investment record", display_text="AL Link"
+                    ),
+                    "Real Multiple": st.column_config.NumberColumn(
+                        "Multiple", help="Multiple expressed as total value / invested amount", format="%.2f x"
+                   ),
+                    "Invested": st.column_config.NumberColumn(
+                        "Invested", help="Dollars invested (rounded to nearest whole number)", format="$%.0f"
+                    ), 
+                    "Net Value": st.column_config.NumberColumn(
+                        "Net Value", help="Total value including realised and unrealized (rounded to nearest whole number)", format="$%.0f"
+                    ),
+                    "Unrealized Value": st.column_config.NumberColumn(
+                        "Unreal $", help="Unrealized value of the investment as reported by the deal lead (rounded to nearest whole number)", format="$%.0f"
+                    ), 
+                    "Realized Value": st.column_config.NumberColumn(
+                        "$ Received", help="Realized value as reported by AngelList (rounded to nearest whole number)", format="$%.0f"
+                    ),
+                    "XIRR": st.column_config.NumberColumn(
+                        "IRR", help="IRR for this investment", format="%.1f %%"
+                    )
+                },
+                hide_index=True,
+            )
+        else :
+            # Data structure and interactive data
+            st.data_editor(
+                top_X_num, 
+                column_config= {
+                    "Invest Date": st.column_config.DateColumn(
+                        "Invest Date", format="DD/MM/YYYY", help="The date of the investment"
+                    ), 
+                    "First_Invest_Date": st.column_config.DateColumn(
+                        "First Date", format="DD/MM/YYYY", help="The date of the first investment"
+                    ),
+                    "Last_Invest_Date": st.column_config.DateColumn(
+                        "Last Date", format="DD/MM/YYYY", help="The date of the last investment"
+                    ), 
+                    "Real Multiple": st.column_config.NumberColumn(
+                        "Multiple", help="Multiple expressed as total value / invested amount", format="%.1f x"
+                    ),
+                    "Invested": st.column_config.NumberColumn(
+                        "Invested", help="Dollars invested (rounded to nearest whole number)", format="$%.0f"
+                    ), 
+                    "Net Value": st.column_config.NumberColumn(
+                        "Net Value", help="Total value including realised and unrealized (rounded to nearest whole number)", format="$%.0f"
+                    ),
+                    "Unrealized Value": st.column_config.NumberColumn(
+                        "Unreal $", help="Unrealized value of the investment as reported by the deal lead (rounded to nearest whole number)", format="$%.0f"
+                    ), 
+                    "Realized Value": st.column_config.NumberColumn(
+                        "$ Received", help="Realized value as reported by AngelList (rounded to nearest whole number)", format="$%.0f"
+                    ), 
+                    "XIRR": st.column_config.NumberColumn(
+                        "IRR", help="IRR for this investment", format="%.1f %%"
+                    )
+                },
+                hide_index=True,
+            )
+        # Show a tree graph that looks nice
+        # Calculate sizes based on Net Value
+        # First remove zero numbers as they can't be plotted
+        top_X_num = top_X_num[top_X_num['Net_Value'] > 0]
+
+        sizes = top_X_num['Net_Value']
+ 
+        labels = [f"{company}\n({multiple:.1f}x)" for company, multiple in zip(top_X_num['Company/Fund'], top_X_num['Real Multiple'])]
+        colors = plt.cm.viridis(np.linspace(0, 0.8, len(top_X_num)))
+
+        # Create the plot
+        plt.figure(figsize=(12, 8))
+        squarify.plot(sizes=sizes, label=labels, color=colors, alpha=0.8, text_kwargs={'fontsize':10})
+        plt.axis('off')
+        plt.title('Investment Treemap (Size by Net Value, Labels show Multiple)', pad=20)
+        plt.tight_layout()
+        st.pyplot(plt)
+        plt.cla()
+
+        # Also show a Waterfall Chart of value created (which isn't limited by the data set)
+        # Filter out values below the 1% threshold
+        threshold = 0.01
+        temp_df = df.copy()
+        # Have to groupby again
+        temp_df['Val increase'] = temp_df['Net Value'] - temp_df['Invested']
+        total_increase = temp_df['Val increase'].sum()
+        filtered_df = temp_df[temp_df['Val increase'] / total_increase >= threshold]
+
+        # Group the remaining investments by 'Investment' and sum their 'Val increase'
+        others_increase = temp_df[temp_df['Val increase'] / total_increase < threshold]['Val increase'].sum()
+
+        # Create an 'Others' category
+        others_category = pd.DataFrame({'Company/Fund': ['Others'], 'Val increase': [others_increase]})
+        filtered_df = pd.concat([filtered_df, others_category])
+        sorted_df = filtered_df.sort_values(by='Val increase', ascending=False)
+        total_entries = len(sorted_df)
+
+        # Create the waterfall chart
+        fig, ax = plt.subplots(figsize=(10, 6))
+        # Get the labels and values
+        labels = sorted_df['Company/Fund'].tolist()
+        values = sorted_df['Val increase'].tolist()
+        # Plot the waterfall chart
+
+        # Convert values to millions
+        values_millions = [v / 1e6 for v in values]  # Divide each value by 1 million
+
+        # Plot the waterfall chart
+        # Calculate new ylim based on millions
+        total_increase_millions = total_increase / 1e6
+        others_increase_millions = others_increase / 1e6
+        ax.set_ylim(0, total_increase_millions - others_increase_millions)  # Set y-axis limit for clarity
+
+#        ax.set_ylim(0, total_increase - others_increase) # Set y-axis limit for clarity
+        cmap = plt.get_cmap('coolwarm', total_entries)  # Use 'viridis' or any other colormap you like
+        # Initialize the current value at 0 for the first bar
+        current_value = 0
+        for i, (label, value) in enumerate(zip(labels, values_millions)):
+            next_value = current_value + value
+            ax.bar(i, value, bottom=current_value, label=label if i == 0 else "", color=cmap(i), alpha=0.7, width=0.8) # Set label only for the first bar
+            current_value = next_value
+            ax.text(i, current_value*.9, f"${values[i]:,.0f}", ha='center', va='center')
+
+        ax.set_xticks(range(len(labels)))
+        ax.set_xticklabels(labels, rotation=45, ha='right')
+        ax.set_ylabel("Value Increase ($ M)")
+        ax.set_title('Value Increase by Investment (showing > 1%)')
         #plt.legend() # No longer needed since labels are only set for the first bar
         plt.tight_layout()
         st.pyplot(fig)
@@ -570,7 +821,6 @@ elif option == "Year":
 
     # Clean 'Invest Date' column
     if 'Invest Date' in temp_df.columns:
-
         temp_df['Year'] = temp_df['Invest Date'].dt.year
 
     # Group by year

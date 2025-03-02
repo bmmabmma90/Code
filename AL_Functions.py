@@ -66,13 +66,13 @@ def convert_date(date_str):
         return pd.to_datetime(date_str)
     except ValueError:
         try:
-            return pd.to_datetime(date_str, format='%m/%d/%y')
+            return pd.to_datetime(date_str, format='%m/%d/%y') # Warning: but when I do my own (not AngelList) data
         except ValueError:
             print(f"Could not convert date: {date_str}")
             return pd.NaT  # Return NaT for unconvertible dates
  
 def calculate_row_xirr(row, now):
-    """Calculates the XIRR for a single row.
+    """Calculates the XIRR for a single row from the df with its normal set up
 
     Args:
         row (pd.Series): The row containing investment data.
@@ -91,9 +91,39 @@ def calculate_row_xirr(row, now):
         print(f"Error calculating XIRR for row {row.name}: {e}")
         return float('nan')
 
-# Calculate the whole portfolio's XIRR using hte XIRR function 
+def calculate_company_xirr(all_cashflows):
+    """
+    Calculates the XIRR for a portfolio aggregated by company.
+    This function takes a list of cashflow tuples (date, amount)
+    and calculates the XIRR based on those cashflows.
+
+    Args:
+        all_cashflows: A list of tuples, where each tuple is (date, amount).
+                       'date' should be a datetime object, and 'amount' is a float.
+
+    Returns:
+        float: The XIRR value for the company, or None if calculation fails.
+    """
+    try:
+        # Ensure the cashflows list is not empty
+        if not all_cashflows:
+            print("Warning: Empty cashflows list passed to calculate_company_xirr.")
+            return 0.0  # Or None, depending on how you want to handle empty cashflows
+        
+        # Separate dates and amounts
+        dates, amounts = zip(*all_cashflows)
+
+        # Calculate the XIRR for this company
+        company_xirr = xirr(dates, amounts)
+        return company_xirr
+    except Exception as e:
+        print(f"Error calculating company XIRR: {e}")
+        return 0.0  # Or None, depending on how you want to handle errors
+
+# Calculate the whole portfolio's XIRR using hte XIRR function
 def calculate_portfolio_xirr(df, total_net_value):
-    """Calculates the overall XIRR of the whole portfolio.
+    """Calculates the overall XIRR of the whole portfolio. Actually of any list of Invest Date + Invested pairs
+    Note that it calculates it assuming that the exit was now (not at a previous time)
     Args:
         df: DataFrame with 'Invest Date', 'Invested' but uses total_net_value to do the total calculation.
     Returns:
@@ -111,7 +141,7 @@ def calculate_portfolio_xirr(df, total_net_value):
         portfolio_xirr = xirr(all_cashflows)
         return portfolio_xirr
     except Exception as e:
-        st.write(f"Error calculating portfolio XIRR: {e}")
+        print(f"Error calculating portfolio XIRR: {e}")
         return None
     
 def process_and_summarize_data(df):
@@ -204,13 +234,13 @@ def process_and_summarize_data(df):
         elif row_names[i] == 'Locked':
             filtered_df = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == True)]
         elif row_names[i] == 'Marked Up':
-            filtered_df = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == False) & (df['Real Multiple'] >= 1)]
+            filtered_df = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == False) & (df['Real Multiple'] > 1)]
         elif row_names[i] == 'Not Marked Up':
-            filtered_df = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == False) & (df['Real Multiple'] < 1)]
+            filtered_df = df[(df['Status'] != 'Realized') & (df['Valuation Unknown'] == False) & (df['Real Multiple'] <= 1)]
 
         # Calculate summary statistics
         count = len(filtered_df)
-        count_unique = len(filtered_df['Company/Fund'].unique())
+        count_uniques = len(filtered_df['Company/Fund'].unique())
         invested_sum = filtered_df['Invested'].sum()
         realized_sum = filtered_df['Realized Value'].sum()
         unrealized_sum = filtered_df['Unrealized Value'].sum()
@@ -228,7 +258,7 @@ def process_and_summarize_data(df):
         examples = examples[:-2]
 
         # Create a new DataFrame for the summary
-        summary_data = {'Category' : [row_names[i]], 'Investments': [count], 'Companies': [count_unique],
+        summary_data = {'Category' : [row_names[i]], 'Investments': [count], 'Companies': [count_uniques],
                         'Percentage': [percentage], 'Invested': [invested_sum],
                         'Realized': [realized_sum], 'Unrealized': [unrealized_sum], 'Multiple': [multiple], 'Examples': [examples] }
         if row_names[i] == 'Totals': # Create the table otherwise append
