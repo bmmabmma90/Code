@@ -268,7 +268,7 @@ elif option == "Stats":
     if st.session_state.num_locked > 0 :
         total_value = st.number_input("Insert the total value from AngelList")
     else:
-        total_value = sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]
+        total_value = sumdf.loc[sumdf['Category'] == 'Totals', 'Value'].iloc[0]
 
     if st.session_state.has_data_file:
         # Calculate the total value using an estimate
