@@ -86,6 +86,8 @@ format of this second file must be:
     Company/Fund  URL  AngelList URL   Comment   Other fields
 
 [Further instructions](https://docs.google.com/document/d/1WldPWcaWwZNBu-X0_e7LzybXyoVedJl84KTDR-gE4fo/edit?usp=sharing) are available (please comment if issues)
+
+v.0.0.2
 '''
     st.markdown(multi)
 
