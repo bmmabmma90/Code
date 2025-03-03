@@ -29,9 +29,9 @@ st.title("AngelList Startup Data Analyser")
 
 # Set has no data file until one is read in correctly
 if 'force_load' not in st.session_state: 
-    st.session_state.force_load = True
+    st.session_state.force_load = False
 if 'advanced_user' not in st.session_state:
-    st.session_state.advanced_user = True
+    st.session_state.advanced_user = False
 if 'has_data_file' not in st.session_state: 
     st.session_state.has_data_file = False
 if 'has_enhanced_data_file' not in st.session_state: 
@@ -58,7 +58,7 @@ with st.sidebar:
         else:
             option = st.selectbox(
                 "Choose an option:",
-                ("About", "Load Data", "Stats", "Top Investments", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no markups", "Graphs")
+                ("About", "Load Data", "Stats", "Top Investments", "Top by Company", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no markups", "Graphs")
             )
     else:
         option = st.selectbox(
