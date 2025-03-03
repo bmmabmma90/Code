@@ -63,7 +63,7 @@ with st.sidebar:
     else:
         option = st.selectbox(
             "Choose an option:",
-            ("About", "Load Data", "Tax")
+            ("About", "Load Data") # "Tax" while debugging
         )
         
 # Perform actions based on the selected option
@@ -539,8 +539,8 @@ You can use the slider to restrict the number of values shown on the screen
                 except ValueError:
                     company_xirr = 0.0
                 # Find the correct index to update in 'grouped'
-                company_name = all_transactions['Company/Fund'].iloc[0]  # Get the company name from all_transactions
-                index_to_update = grouped.index[grouped['Company/Fund'] == company_name]
+            company_name = all_transactions['Company/Fund'].iloc[0]  # Get the company name from all_transactions
+            index_to_update = grouped.index[grouped['Company/Fund'] == company_name]
             grouped.loc[index_to_update[0], 'XIRR'] = company_xirr # Update the first match - should only be one
  
         # sort the values
@@ -1206,7 +1206,7 @@ elif option == "Graphs":
                 ax.set_title('Instrument vs Invested')
                 ax.set_xlabel('Investment Amount ($)')
                 ax.set_ylabel('Instrument')
-                ax.legend(loc='upper right')
+                # ax.legend(loc='upper right') - wasn't displaying clearly
                 plt.tight_layout()  # Improve layout
                 st.pyplot(fig)
 
