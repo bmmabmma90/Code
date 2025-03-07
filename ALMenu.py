@@ -716,17 +716,17 @@ elif st.session_state.menu_choice == "Round":
         # Create a figure with two subplots - one for the box plot and one for the individual points
         valid_rounds = temp_df['Round'].dropna().unique()
         valid_round_order = [round_name for round_name in round_order if round_name in valid_rounds]
-        valid_round_order = valid_round_order[:top_filter]
+        valid_round_order_abridged = valid_round_order[:top_filter]
 
         fig, ax = plt.subplots(figsize=(12, 10))
         #gridspec_kw={'height_ratios': [2, 1]})
         # 1. First subplot: Box plot with individual points
     #    sns.boxplot(x='Round', y='Valuation or Cap', data=temp_df[temp_df['Round'].isin(valid_rounds)], order=valid_round_order,
-        sns.boxplot(x='Round', y='Valuation or Cap', data=temp_df, order=valid_round_order,
-                showfliers=False, ax=ax, palette='pastel')
+        sns.boxplot(x='Round', y='Valuation or Cap', data=temp_df, order=valid_round_order_abridged,
+                showfliers=False, ax=ax, hue='Round', palette='pastel', legend=False)
         # Add swarm plot to show individual data points
     #    sns.swarmplot(x='Round', y='Valuation or Cap', data=temp_df[temp_df['Round'].isin(valid_rounds)], order=valid_round_order,
-        sns.swarmplot(x='Round', y='Valuation or Cap', data=temp_df, order=valid_round_order,
+        sns.swarmplot(x='Round', y='Valuation or Cap', data=temp_df, order=valid_round_order_abridged,
                     size=8, color='darkblue', alpha=0.7, ax=ax)
 
         # Add the overall median line
@@ -747,12 +747,13 @@ elif st.session_state.menu_choice == "Round":
 
         plt.tight_layout()
         st.pyplot(fig)
+        plt.cla()
 
         # Also print a summary of the data
         st.write("Summary of Valuation/Cap by Round:")
         # Create a summary DataFrame
         summary_data = []
-        for round_name in temp_df["Round"].unique():
+        for round_name in valid_round_order:
             round_data = temp_df[temp_df['Round'] == round_name]
             if len(round_data) > 0:
                 median_val = round_data['Valuation or Cap'].median()
@@ -783,6 +784,58 @@ elif st.session_state.menu_choice == "Round":
         #summary_df.loc[len(summary_df)] = ["Total", temp_df["Round"].size, overall_median, overall_min, overall_max]
         summary_df = summary_df.sort_values("Round")
         st.dataframe(summary_df.style.format({'Median': format_large_number, 'Min': format_large_number, 'Max': format_large_number}), hide_index=True)
+
+        # Now display a slider that allows us to select specific rounds to examine each investment valuation in that range
+        round_filter = st.select_slider("Select the round to analyse further", options=valid_round_order) 
+        filtered_round_investments = temp_df[temp_df['Round'] == round_filter]
+        filtered_round_investments = filtered_round_investments.sort_values(by='Invest Date')
+
+        # Create a scatter plot for 'Valuation or Cap' with company names as labels and add a median line
+        fig2, ax2 = plt.subplots(figsize=(12, 10))
+        sns.scatterplot(data=filtered_round_investments, x='Invest Date', y='Valuation or Cap', s=100)
+        # Calculate the median value
+        median_val = summary_df.loc[summary_df['Round'] == round_filter, 'Median'].iloc[0]
+        
+       # Prepare data for trendline
+        X = np.arange(len(filtered_round_investments)).reshape(-1, 1)  # X as index
+        Y = filtered_round_investments['Valuation or Cap']
+        weights = filtered_round_investments['Invested']  # This should be numeric
+
+        # Fit the model
+        from sklearn.linear_model import LinearRegression
+        model = LinearRegression()
+        model.fit(X, Y, sample_weight=weights)
+        trendline = model.predict(X)
+
+        # Show the median line
+        ax2.axhline(median_val, color='red', linestyle='--', label='Median Valuation')
+
+        # Plot the trendline
+        ax2.plot(filtered_round_investments['Invest Date'], trendline, color='blue', label='Trendline', linewidth=1)
+
+        # Add labels for each company
+        for i in range(filtered_round_investments.shape[0]):
+            ax2.text(x=filtered_round_investments['Invest Date'].iloc[i], y=filtered_round_investments['Valuation or Cap'].iloc[i],
+                    s=filtered_round_investments['Company/Fund'].iloc[i], fontsize=9, ha='right')
+
+#        # Format x-axis labels as "Month Year"
+#        st.write(filtered_round_investments)
+#        def format_display_date(x,pos):
+#            st.write(x, x.strftime('%b %Y'), pd.to_datetime(x).strftime('%b %Y'))
+#            return pd.to_datetime(x).strftime('%b %Y')
+#       ax2.xaxis.set_major_formatter(FuncFormatter(format_display_date))
+
+        # Format y-axis to show in millions
+        ax2.tick_params(axis='x', labelrotation=45)
+
+        ax2.yaxis.set_major_formatter(FuncFormatter(millions))
+        ax2.set_title('Valuation/Cap for ' + round_filter + ' Round Investments with Median and Investment amount weighted TrendLine')
+        ax2.set_xlabel('Investment Date')
+        ax2.set_ylabel('Valuation or Cap ($M)')
+        ax2.grid(True)
+        ax2.legend()
+        plt.tight_layout()
+        st.pyplot(fig2)
 
 elif st.session_state.menu_choice == "Market":
     st.subheader("Market Stats", divider=True)
