@@ -17,6 +17,24 @@ def format_currency_dollars_only(amount):
     """Formats a number as currency."""
     return '${:,.0f}'.format(amount)
 
+def format_large_number(number):
+    """
+    Formats a large number with one decimal place, using 'M' for millions or 'K' for thousands.
+
+    Args:
+        number (float): The number to format.
+
+    Returns:
+        str: The formatted number.
+    """
+    if number >= 1_000_000:
+        return f"${number / 1_000_000:.2f}M"  # Millions
+    elif number >= 1_000:
+        return f"${number / 1_000:.2f}K"  # Thousands
+    else:
+        return f"${number:.2f}"  # Numbers less than 1,000
+
+
 def format_date(date):
     """Formats a date to DD MM YY format for the screen"""
     return date.strftime("%d %m %y")
@@ -220,6 +238,14 @@ def process_and_summarize_data(df):
     df["Multiple"] = df["Multiple"].replace(r'[^\d.]', '', regex=True).astype(float)
     if 'Round Size' in df.columns :
         df['Round Size'] = df['Round Size'].replace(r'[^\d]', '', regex=True).astype(float)
+    if 'Valuation or Cap' in df.columns:
+        # First remove the european decimals before forcing to a float
+        def replace_two_or_more_decimal_points(value):
+            if isinstance(value, str) and value.count('.') >= 2:
+                return value.replace('.', ',', value.count('.') - 1)
+            return value
+        df['Valuation or Cap'] = df['Valuation or Cap'].apply(replace_two_or_more_decimal_points)  
+        df['Valuation or Cap'] = df['Valuation or Cap'].replace(r'[^\d.]', '', regex=True).astype(float)
     
     # 2.c. Special treatment of Unrealized Value because we want to flag where we don't know the actual value
     # We'll iterate through and force "Unrealized" and "Net Value" to zero AFTER we have made a note that the

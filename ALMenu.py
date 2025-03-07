@@ -11,6 +11,7 @@ from datetime import datetime, date
 from AL_Functions import (
     format_currency,
     format_currency_dollars_only,
+    format_large_number,
     format_multiple,
     format_percent,
     format_st_editor_block,
@@ -42,7 +43,7 @@ if 'has_enhanced_data_file' not in st.session_state:
     st.session_state.has_enhanced_data_file = False
 if 'has_finance_data_file' not in st.session_state: 
     st.session_state.has_finance_data_file = False
-if 'date_foramt' not in st.session_state: 
+if 'date_format' not in st.session_state: 
     st.session_state.date_format = "%d/%m/%y"
 if 'has_angellist_data' not in st.session_state: 
     st.session_state.has_angellist_data = False
@@ -61,12 +62,12 @@ with st.sidebar:
         if st.session_state.advanced_user :
             option = st.selectbox(
                 "Choose an option:",
-                ("About", "Load Data", "Overwrite", "Stats", "Top Investments", "Top by Company", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no values", "Graphs", "Tax")
+                ("About", "Load Data", "Overwrite", "Stats", "Top Investments", "Top by Company", "Ask me anything", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no values", "Graphs", "Tax")
             )
         else:
             option = st.selectbox(
                 "Choose an option:",
-                ("About", "Load Data", "Stats", "Top Investments", "Top by Company", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no values", "Graphs")
+                ("About", "Load Data", "Stats", "Top Investments", "Top by Company", "Ask me anything", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no values", "Graphs")
             )
     else:
         option = st.selectbox(
@@ -270,7 +271,7 @@ elif st.session_state.menu_choice == "Load Data":
     # 1. Drop the data we don't analyse for easy display / debugging - 'Round', 'Market', 'Round Size', 'Invest Date', 'Instrument'
         todrop = { 'Investment Entity', 'Invest Date_y', # This is a special value caused by the outer join - we shouldn't see it! 
                 'Investment Type', 'Fund Name', 'Allocation',  
-                'Valuation or Cap Type', 'Valuation or Cap', 
+                'Valuation or Cap Type', # 'Valuation or Cap', 
                 'Discount', 'Carry', 'Share Class'}
         # Get the actual column names from the DataFrame
         df_columns = df.columns
@@ -300,6 +301,19 @@ elif st.session_state.menu_choice == "Load Data":
         st.session_state.num_leads = num_leads
         st.session_state.num_zero_value_leads = num_zero_value_leads
         st.session_state.num_locked = num_locked
+
+elif st.session_state.menu_choice == 'Ask me anything':
+    st.markdown('''You can ask a question in query format to get an answer on the dataframe.
+Valid operations are on all column names and can use <,>,=   and or 'column name' == "Value"
+''')
+    st.markdown("Example questions include:<br>1. What are the top companies?<br>2. How much was invested in total?<br>3. Which market had the most invested in it?", unsafe_allow_html=True)
+
+    if st.session_state.has_data_file:
+        df = st.session_state.df
+        query = st.text_input("Enter your query in simple terms")
+        if query:
+            answer = df.query(query)
+            st.write(answer) 
 
 elif st.session_state.menu_choice == "Stats":
     st.subheader("Investment Statistics", divider=True)
@@ -638,17 +652,28 @@ elif st.session_state.menu_choice == "Round":
     # prompt: Create a pie graph of summarised data that is aggregated by Round and sums the Invested amount
     st.subheader("Round Stats", divider=True)
     st.markdown("Show statistics related to rounds of investment")
-    top_filter = st.slider("Show how many in graphs",1,50,10) 
 
+
+    # define the round order to use to reset things as required
+    # could use this for filtering/sorting and display order of round data for AngelList for example but have to check that none are missing or it won't display them
+    round_order = ['Preseed', 'Pre-Seed', 'Seed', 'Seed+', 'Series A', 'Series A+','Series B', 'Series B+', 'Series C', 'Other']
     # Group by 'Round' and sum 'Invested'
     temp_df = st.session_state.df.copy()
+    all_rounds = temp_df['Round'].unique()
 
     temp_df["Increase"] = temp_df["Net Value"] - temp_df["Invested"]    
     grouped = temp_df.groupby("Round", as_index=False).agg({"Invested":"sum", "Increase":"sum"})
+    grouped['Round'] = pd.Categorical(grouped['Round'], categories=round_order, ordered=True)
+    grouped.sort_values('Round', inplace=True)
+
     invested_sum = grouped["Invested"].sum()
     value_sum = grouped[grouped["Increase"] > 0]["Increase"].sum()
     grouped["Perc by Invested"] = grouped["Invested"]/invested_sum if invested_sum !=0 else 0
     grouped["Perc by Increase"] = grouped["Increase"]/value_sum if invested_sum !=0 else 0
+    # Get median data
+#    median_by_round = temp_df.groupby('Round')['Valuation or Cap'].median()
+#    grouped = grouped.merge(median_by_round.rename('Median Round Price'), on='Round', how='left')
+    overall_median = temp_df['Valuation or Cap'].median()
 
     # Create a new column in the grouped dataframe to store the examples
     grouped["Examples"] = ""
@@ -657,16 +682,15 @@ elif st.session_state.menu_choice == "Round":
         examples = show_top_X_increase_and_multiple(temp_df, round_name, 'Round')
         grouped.loc[grouped["Round"] == round_name, "Examples"] = examples
 
-    grouped_styled = grouped.style.format({'Perc by Invested': format_percent, 'Perc by Increase': format_percent, 'Invested': format_currency, 'Increase': format_currency})
+    grouped_styled = grouped.style.format({'Perc by Invested': format_percent, 'Perc by Increase': format_percent, 'Invested': format_currency, 'Increase': format_currency, 'Median Round Price': format_large_number})
     st.dataframe(grouped_styled, hide_index=True)
 
     # Limited the data displayed
     sorted_df = grouped.sort_values(by='Invested', ascending=False)
-    filtered_grouped = sorted_df.head(top_filter)
 
     # Create the pie chart showing Invested
     plt.figure(figsize=(8, 8))
-    plt.pie(filtered_grouped["Invested"], labels=filtered_grouped["Round"], autopct='%1.1f%%', startangle=90)
+    plt.pie(sorted_df["Invested"], labels=sorted_df["Round"], autopct='%1.1f%%', startangle=90)
     plt.title('Investment Amount by Round')
     plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
     st.pyplot(plt)
@@ -676,13 +700,89 @@ elif st.session_state.menu_choice == "Round":
     grouped.loc[grouped["Increase"] < 0, "Increase"] = 0
     # Limited the data displayed
     sorted_df = grouped.sort_values(by='Increase', ascending=False)
-    filtered_grouped = sorted_df.head(top_filter)
 
     plt.figure(figsize=(8, 8))
     plt.pie(grouped["Increase"], labels=grouped["Round"], autopct='%1.1f%%', startangle=90)
     plt.title('Value created by Round')
     plt.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
     st.pyplot(plt)
+
+    # Graph the valuation material
+    if 'Valuation or Cap' not in temp_df.columns or temp_df['Valuation or Cap'].isnull().all():
+        st.write("Data contains no 'Valuation or Cap' data.")
+    else:
+        top_filter = st.slider("Show how many categories",1,20,4)  
+        from matplotlib.ticker import FuncFormatter
+        # Create a figure with two subplots - one for the box plot and one for the individual points
+        valid_rounds = temp_df['Round'].dropna().unique()
+        valid_round_order = [round_name for round_name in round_order if round_name in valid_rounds]
+        valid_round_order = valid_round_order[:top_filter]
+
+        fig, ax = plt.subplots(figsize=(12, 10))
+        #gridspec_kw={'height_ratios': [2, 1]})
+        # 1. First subplot: Box plot with individual points
+    #    sns.boxplot(x='Round', y='Valuation or Cap', data=temp_df[temp_df['Round'].isin(valid_rounds)], order=valid_round_order,
+        sns.boxplot(x='Round', y='Valuation or Cap', data=temp_df, order=valid_round_order,
+                showfliers=False, ax=ax, palette='pastel')
+        # Add swarm plot to show individual data points
+    #    sns.swarmplot(x='Round', y='Valuation or Cap', data=temp_df[temp_df['Round'].isin(valid_rounds)], order=valid_round_order,
+        sns.swarmplot(x='Round', y='Valuation or Cap', data=temp_df, order=valid_round_order,
+                    size=8, color='darkblue', alpha=0.7, ax=ax)
+
+        # Add the overall median line
+        ax.axhline(y=overall_median, color='red', linestyle='--', 
+                label=f'Overall Median: ${overall_median:,.0f}')
+
+        # Format y-axis to show in millions
+        def millions(x, pos):
+            return f'${x/1000000:.1f}M'
+        ax.yaxis.set_major_formatter(FuncFormatter(millions))
+        #ax.set_xticklabels(valid_round_order)
+        
+        # Add title and labels
+        ax.set_title('Valuation or Cap by Investment Round with Individual Data Points', fontsize=14)
+        ax.set_xlabel('Investment Round', fontsize=12)
+        ax.set_ylabel('Valuation or Cap', fontsize=12)
+        ax.legend()
+
+        plt.tight_layout()
+        st.pyplot(fig)
+
+        # Also print a summary of the data
+        st.write("Summary of Valuation/Cap by Round:")
+        # Create a summary DataFrame
+        summary_data = []
+        for round_name in temp_df["Round"].unique():
+            round_data = temp_df[temp_df['Round'] == round_name]
+            if len(round_data) > 0:
+                median_val = round_data['Valuation or Cap'].median()
+                min_val = round_data['Valuation or Cap'].min()
+                max_val = round_data['Valuation or Cap'].max()
+                if pd.isna(median_val): median_val = 0
+                if pd.isna(min_val): min_val = 0
+                if pd.isna(max_val): max_val = 0
+                count = len(round_data)
+                summary_data.append({
+                    "Round": round_name,
+                    "Count": count,
+                    "Median": median_val,
+                    "Min": min_val,
+                    "Max": max_val
+                })
+            else:
+                summary_data.append({"Round": round_name, "Count": 0, "Median": 0, "Min": 0, "Max": 0 })
+
+        # Create a data frame with the summary data
+        summary_df = pd.DataFrame(summary_data)
+        overall_min = summary_df["Min"].min()
+        overall_max = summary_df["Max"].max()
+        total_row = pd.DataFrame([["Total", temp_df["Round"].size, overall_median, overall_min, overall_max]], columns=summary_df.columns)
+        summary_df = pd.concat([summary_df, total_row], ignore_index=True)
+        summary_df['Round'] = pd.Categorical(summary_df['Round'], categories=round_order + ['Total'], ordered=True)
+
+        #summary_df.loc[len(summary_df)] = ["Total", temp_df["Round"].size, overall_median, overall_min, overall_max]
+        summary_df = summary_df.sort_values("Round")
+        st.dataframe(summary_df.style.format({'Median': format_large_number, 'Min': format_large_number, 'Max': format_large_number}), hide_index=True)
 
 elif st.session_state.menu_choice == "Market":
     st.subheader("Market Stats", divider=True)
