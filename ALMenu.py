@@ -345,6 +345,10 @@ elif st.session_state.menu_choice == "Stats":
             st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Totals', 'Unrealized'] += float(locked_value)
             st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Locked', 'Value'] += float(locked_value)
             st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Totals', 'Value'] += float(locked_value)
+            # Also recalculate Multiple and XIRR too 
+            overall_XIRR = calculate_portfolio_xirr(st.session_state.df, st.session_state.has_realized_dates, sumdf.loc[sumdf['Category'] == 'Totals', 'Unrealized'].iloc[0])
+            st.session_state.overall_XIRR = overall_XIRR
+
     elif st.session_state.num_locked == 0: # This is when there aren't any locked values so just set total_value at the total of Realized and Unrealized (just in case Value not entered correctly)
         total_value = sumdf.loc[sumdf['Category'] == 'Totals', 'Realized'].iloc[0] + sumdf.loc[sumdf['Category'] == 'Totals', 'Unrealized'].iloc[0]     
         st.session_state.total_value = total_value
@@ -357,8 +361,9 @@ elif st.session_state.menu_choice == "Stats":
     a.metric(label="Investments", value=sumdf.loc[sumdf['Category'] == 'Totals', 'Investments'].iloc[0], border=True)
     b.metric(label="Companies", value=st.session_state.num_uniques, border=True)
     if st.session_state.total_value > 0:
-        c.metric(label="Total Value",value=format_large_number(total_value), border=True)
-        d.metric(label="Multiple",value=format_multiple(sumdf.loc[sumdf['Category'] == 'Totals', 'Multiple'].iloc[0]), border=True)
+        c.metric(label="Total Value",value=format_large_number(st.session_state.total_value), border=True)
+        multiple_to_display = sumdf.loc[sumdf['Category'] == 'Totals', 'Value'].iloc[0]/sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]
+        d.metric(label="Multiple",value=format_multiple(multiple_to_display), border=True)
 
         # Calculate overall XIRR
         if 'overall_XIRR' not in st.session_state :                    
@@ -750,7 +755,7 @@ elif st.session_state.menu_choice == "Round":
 
         valid_round_order_abridged = valid_round_order[:top_filter]
 
-        fig, ax = plt.subplots(figsize=(12, 10))
+        fig, ax = plt.subplots(figsize=(12, 8))
         #gridspec_kw={'height_ratios': [2, 1]})
         # 1. First subplot: Box plot with individual points
     #    sns.boxplot(x='Round', y='Valuation or Cap', data=temp_df[temp_df['Round'].isin(valid_rounds)], order=valid_round_order,
@@ -821,9 +826,11 @@ elif st.session_state.menu_choice == "Round":
         round_filter = st.pills("Select the round to analyse further", options=valid_round_order, default=valid_round_order[0]) 
         filtered_round_investments = temp_df[temp_df['Round'] == round_filter]
         filtered_round_investments = filtered_round_investments.sort_values(by='Invest Date')
+        # Drop no valuation or cap data ones - because we can't plot them anyway!
+        filtered_round_investments = filtered_round_investments.dropna(subset=['Valuation or Cap'])
 
         # Create a scatter plot for 'Valuation or Cap' with company names as labels and add a median line
-        fig2, ax2 = plt.subplots(figsize=(12, 10))
+        fig2, ax2 = plt.subplots(figsize=(12, 8))
         sns.scatterplot(data=filtered_round_investments, x='Invest Date', y='Valuation or Cap', s=100)
         # Calculate the median value
         median_val = summary_df.loc[summary_df['Round'] == round_filter, 'Median'].iloc[0]
@@ -831,25 +838,12 @@ elif st.session_state.menu_choice == "Round":
         # Prepare data for trendline
         X = np.arange(len(filtered_round_investments)).reshape(-1, 1)  # X as index
         Y = filtered_round_investments['Valuation or Cap']
-
-        # Remove rows where Y is NaN
-        nan_mask = np.isnan(Y)
-        X_filtered = X[~nan_mask]
-        Y_filtered = Y[~nan_mask]
-        
         weights = filtered_round_investments['Invested']  # This should be numeric
-        weights_filtered = weights[~nan_mask]
-
-        # Fit the model only if there is some data after filtering
-        if len(X_filtered) > 0:
-            # Fit the model
-            model = LinearRegression()
-            model.fit(X_filtered, Y_filtered, sample_weight=weights_filtered)
-            trendline = model.predict(X_filtered)
-        else:
-            trendline = []
-            st.warning("No valid data points to calculate trendline after filtering for NaN values.")
-
+        
+               # Fit the model
+        model = LinearRegression()
+        model.fit(X, Y, sample_weight=weights)
+        trendline = model.predict(X)
 
         # Show the median line
         ax2.axhline(median_val, color='red', linestyle='--', label='Median Valuation')
