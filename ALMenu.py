@@ -3,11 +3,12 @@
 
 import streamlit as st
 import pandas as pd
+from datetime import datetime, date
+import re
+import numpy as np # User for colour stuff
 from matplotlib import pyplot as plt
 import seaborn as sns
 import squarify
-import numpy as np # User for colour stuff
-from datetime import datetime, date
 from AL_Functions import (
     format_currency,
     format_currency_dollars_only,
@@ -16,7 +17,7 @@ from AL_Functions import (
     format_percent,
     format_st_editor_block,
     calculate_row_xirr,
-    calculate_company_xirr,
+    calculate_xirr,
     calculate_portfolio_xirr,
     process_and_summarize_data,
     show_top_X_increase_and_multiple,
@@ -43,6 +44,9 @@ if 'has_enhanced_data_file' not in st.session_state:
     st.session_state.has_enhanced_data_file = False
 if 'has_finance_data_file' not in st.session_state: 
     st.session_state.has_finance_data_file = False
+if 'has_realized_dates' not in st.session_state:
+    st.session_state.has_realized_dates = False
+
 if 'date_format' not in st.session_state: 
     st.session_state.date_format = "%d/%m/%y"
 if 'has_angellist_data' not in st.session_state: 
@@ -62,12 +66,12 @@ with st.sidebar:
         if st.session_state.advanced_user :
             option = st.selectbox(
                 "Choose an option:",
-                ("About", "Load Data", "Overwrite", "Stats", "Top Investments", "Top by Company", "Ask me anything", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no values", "Graphs", "Tax")
+                ("About", "Load Data", "Overwrite", "Stats", "Top Investments", "Top by Company", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no values", "Graphs", "Tax")
             )
         else:
             option = st.selectbox(
                 "Choose an option:",
-                ("About", "Load Data", "Stats", "Top Investments", "Top by Company", "Ask me anything", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no values", "Graphs")
+                ("About", "Load Data", "Stats", "Top Investments", "Top by Company", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no values", "Graphs")
             )
     else:
         option = st.selectbox(
@@ -165,7 +169,7 @@ Once complete, all ongoing calculations will be based on this new data.
                         # Run the process thing again
                             # 2. Process all the data
 
-                        df, summary_df, num_uniques, num_leads, num_zero_value_leads, num_locked = process_and_summarize_data(df, st.session_state.date_format)
+                        df, summary_df, num_uniques, num_leads, num_zero_value_leads, num_locked, st.session_state.has_realized_dates = process_and_summarize_data(df, st.session_state.date_format)
 
                         st.dataframe(df)
                         # Set session state values for other screens
@@ -283,7 +287,7 @@ elif st.session_state.menu_choice == "Load Data":
         df = df.drop(columns=todrop_filtered)
 
     # 2. Process all the data
-        df, summary_df, num_uniques, num_leads, num_zero_value_leads, num_locked = process_and_summarize_data(df)
+        df, summary_df, num_uniques, num_leads, num_zero_value_leads, num_locked, st.session_state.has_realized_dates = process_and_summarize_data(df)
 
  #      st.dataframe(summary_df)
  #      print(summary_df)
@@ -317,7 +321,7 @@ Valid operations are on all column names and can use <,>,=   and or 'column name
 
 elif st.session_state.menu_choice == "Stats":
     st.subheader("Investment Statistics", divider=True)
-    st.markdown("Show statistics across the portfolio.  NB: If you have 'Locked' data (eg from AngelList' you will need to go into AngelList to get the total portfolio value which is then used to work out the value increase/decrease of all 'Locked' investments")
+    st.markdown("Show statistics across the portfolio.  NB: If you have 'Locked' data (eg from AngelList) you will need to go into AngelList to get the total portfolio value which is then used to work out the value increase/decrease of all 'Locked' investments")
     # Write all the outputs to the screen
 
     sumdf = st.session_state.sumdf
@@ -333,13 +337,14 @@ elif st.session_state.menu_choice == "Stats":
         st.session_state.total_value = total_value
 
     a, b, f, g = st.columns(4) # Macro stats - investments + companies plus syndicate stats
-    c, d, h, e = st.columns(4) # Macro valuation stats - total value, net value and invested $
-#       f, g = st.columns(2) # Syndicate info
+    c, d, h, e = st.columns(4) # Macro valuation stats - total value, net value and invested
+    i, j, k, l = st.columns(4) # Macro - averages etc - investment mean, median, multiple > 1x mean, realised % 
+    # g, h = st.columns(2) # Syndicate info
 
     a.metric(label="Investments", value=sumdf.loc[sumdf['Category'] == 'Totals', 'Investments'].iloc[0], border=True)
     b.metric(label="Companies", value=st.session_state.num_uniques, border=True)
     if st.session_state.total_value > 0:
-        c.metric(label="Total Value $",value=format_currency_dollars_only(total_value), border=True)
+        c.metric(label="Total Value",value=format_large_number(total_value), border=True)
         d.metric(label="Multiple (x)",value=format_multiple(sumdf.loc[sumdf['Category'] == 'Totals', 'Multiple'].iloc[0]), border=True)
 
         # Calculate overall XIRR
@@ -349,9 +354,17 @@ elif st.session_state.menu_choice == "Stats":
             h.metric(label="IRR %",value=format_percent(overall_XIRR), border=True)
         else:
             h.metric(label="IRR %",value=format_percent(st.session_state.overall_XIRR), border=True)
-    e.metric(label="Invested $",value=format_currency_dollars_only(sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]), border=True)
+    e.metric(label="Invested",value=format_large_number(sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]), border=True)
     f.metric(label="Syndicates Invested",value=st.session_state.num_leads, border=True)
     g.metric(label="Syndicates no value info",value=st.session_state.num_zero_value_leads, border=True)
+    
+    df = st.session_state.df
+    data_mult = df[df["Real Multiple"] > 1]["Real Multiple"].dropna()
+
+    i.metric(label="Invested (Mean)",value=format_large_number(df['Invested'].mean()), border=True)
+    j.metric(label="Invested (Median)",value=format_large_number(df['Invested'].median()), border=True)
+    k.metric(label="Multiple (>1x) (Mean)",value=format_multiple(data_mult.mean()), border=True)
+    l.metric(label="Multiple (>1x) (Median)",value=format_multiple(data_mult.median()), border=True)
 
     # Neatly format everything
     summary_styled = st.session_state.sumdf.style.format({'Percentage': format_percent, 'Invested': format_currency_dollars_only, \
@@ -514,8 +527,10 @@ You can use the slider to restrict the number of values shown on the screen
 
     # Calculate 'Real Multiple' and 'XIRR'
     grouped['Real Multiple'] = grouped['Net_Value'] / grouped['Invested']
-    # Calculate 'XIRR'
-
+    
+    # Calculate 'XIRR' requires us to look at all the values in the data for the company and treat each 
+    # entry of investment as an outflow of money and any realization as an inflow but if no realization use 
+    # today's date
     grouped['XIRR'] = 0.0
     for index, row in grouped.iterrows():
         # Get all transactions relating to this fund
@@ -533,7 +548,8 @@ You can use the slider to restrict the number of values shown on the screen
             
             # Add the sum of Net value as exit value with time as now
             total_net_value = all_transactions['Net Value'].sum()
-            if pd.notna(row["Realized Date"]):
+     #       st.write(row)
+            if st.session_state.has_realized_dates and pd.notna(row["Realized Date"]):
                 realized_date = row["Realized Date"]
      #          st.write("Did find a realized date for the row")
                 all_cashflows.append((realized_date, total_net_value))
@@ -543,7 +559,7 @@ You can use the slider to restrict the number of values shown on the screen
             # Calculate the xirr for this row, and store it in the overall dataframe
             try:
                 # Calculate the XIRR for this company
-                company_xirr = calculate_company_xirr(all_cashflows)
+                company_xirr = calculate_xirr(all_cashflows)
             except ValueError:
                 company_xirr = 0.0
             # Find the correct index to update in 'grouped'
@@ -1192,7 +1208,7 @@ elif st.session_state.menu_choice == "Graphs":
             plt.tight_layout()  # Improve layout
             st.pyplot(fig)
 
-    # 5. Plot of Round Size and Multiple
+    # 6. Plot of Round Size and Multiple
     # from scipy import stats
     # import numpy as np
 
@@ -1201,13 +1217,8 @@ elif st.session_state.menu_choice == "Graphs":
 
     # Calculate correlation
     correlation = df_filtered['Round Size'].corr(df_filtered['Real Multiple'])
-    st.write('Correlation coefficient between Round Size and Multiple: {:.2f}', correlation)
+    st.write(f"Correlation coefficient between Round Size and Multiple: {correlation:.2f}")
 
-    # Print some key statistics
-    st.write("Average Multiple (>1x): {:.2f}".format(data_mult.mean()))
-    st.write("Median Multiple (>1x): {:.2f}".format(data_mult.median()))
-    st.write("Average Investment Amount: ${:,.2f}".format(df['Invested'].mean()))
-    st.write("Median Investment Amount: ${:,.2f}".format(df['Invested'].median()))
 
 elif st.session_state.menu_choice == "Tax":
     st.subheader("Tax and Finance Analysis", divider=True)

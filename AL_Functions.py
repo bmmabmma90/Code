@@ -152,9 +152,8 @@ def calculate_row_xirr(row, now):
         print(f"Error calculating XIRR for row {row.name}: {e}")
         return float('nan')
 
-def calculate_company_xirr(all_cashflows):
+def calculate_xirr(all_cashflows):
     """
-    Calculates the XIRR for a portfolio aggregated by company.
     This function takes a list of cashflow tuples (date, amount)
     and calculates the XIRR based on those cashflows.
 
@@ -168,15 +167,15 @@ def calculate_company_xirr(all_cashflows):
     try:
         # Ensure the cashflows list is not empty
         if not all_cashflows:
-            print("Warning: Empty cashflows list passed to calculate_company_xirr.")
+            print("Warning: Empty cashflows list passed to calculate_xirr.")
             return 0.0  # Or None, depending on how you want to handle empty cashflows
         
         # Separate dates and amounts
         dates, amounts = zip(*all_cashflows)
 
         # Calculate the XIRR for this company
-        company_xirr = xirr(dates, amounts)
-        return company_xirr
+        the_xirr = xirr(dates, amounts)
+        return the_xirr
     except Exception as e:
         print(f"Error calculating company XIRR: {e}")
         return 0.0  # Or None, depending on how you want to handle errors
@@ -274,7 +273,9 @@ def process_and_summarize_data(df):
 
     # Fix Dates
     df['Invest Date'] = df['Invest Date'].apply(convert_date)
+    has_realized_date = False
     if 'Realized Date' in df.columns :
+        has_realized_date = True
         df['Realized Date'] = df['Realized Date'].apply(convert_date)
 
     # Calculate basic XIRR for values - need to replace this with my proper logic I think later
@@ -360,7 +361,7 @@ def process_and_summarize_data(df):
     aggregated_df = aggregated_df[aggregated_df["sum_value"] != 0]
     # Calculate how many there are
     num_zero_value_leads = num_leads - len(aggregated_df)
-    return df, summary_df, num_uniques, num_leads, num_zero_value_leads, num_locked
+    return df, summary_df, num_uniques, num_leads, num_zero_value_leads, num_locked, has_realized_date
 
 def show_top_X_increase_and_multiple(df, round_name, type):
     """Shows the top X companies in a particular category.
