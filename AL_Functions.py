@@ -51,6 +51,12 @@ def format_percent(amount):
 # Formats percentage for Streamlit
 def format_percentage(val): return "{:.2%}".format(val*100) # Formats to 2 decimal places 
 
+# For removing European values etc
+def replace_two_or_more_decimal_points(value):
+    if isinstance(value, str) and value.count('.') >= 2:
+        return value.replace('.', ',', value.count('.') - 1)
+    return value
+
 # Formats a St Editor block using our global variables - note this is a display specific function
 def format_st_editor_block(df_t):
 
@@ -86,6 +92,8 @@ def format_st_editor_block(df_t):
             hide_index=True,
     )  
 
+
+
 # Tries to extract a company name from an AngelList description in tax data that is a bit messy and not clear
 def extract_company_name(description, pattern):
     """Extracts a company name from a description string.
@@ -106,12 +114,50 @@ def extract_company_name(description, pattern):
     # Remove the phrases using regex substitution
     return re.sub(pattern, "", description).strip() #.strip() removes leading and trailing whitespace.
 
-def convert_date(date_str):
+def convert_date_two(date_str, is_us_format=True):
+    """
+    Convert a date string to a pandas datetime object.
+
+    Parameters:
+    - date_str (str): The date string to convert.
+    - is_us_format (bool): Whether the date is in US format (MM/DD/YYYY). 
+                           If False, assumes DD/MM/YYYY format.
+
+    Returns:
+    - pd.Timestamp or None: The converted datetime object, or None if conversion fails.
+    """
+    try:
+        if is_us_format:
+            # Use US format (MM/DD/YYYY)
+            date_format = '%m/%d/%Y'
+        else:
+            # Use non-US format (DD/MM/YYYY)
+            date_format = '%d/%m/%Y'
+        
+        # Convert the string to a datetime object
+        datetime_obj = pd.to_datetime(date_str, format=date_format, errors='coerce')
+        
+        # Check if the conversion was successful
+        if pd.isna(datetime_obj):
+            return None
+        else:
+            return datetime_obj
+    except Exception as e:
+        # Handle any unexpected errors
+        print(f"An error occurred: {e}")
+        return None
+
+
+
+
+def convert_date(date_str, is_US_date=True):
     """Converts a date string to a pandas datetime object so that it can be sorted and calculated on
+    Also takes is it US format date (is angellList date)
 
     Args:
         date_str (str): The date string.
-    #    format : The format to look for - default is AngelList which is '%m/%d/%y'
+        is_US_date: The default is it will look for it in the US format which is '%m/%d/%y', 
+        if false it is assumed to be '%d/%m/%y"
 
     Returns:
         pd.Timestamp or pd.NaT: The datetime object or NaT for invalid dates.
@@ -119,13 +165,22 @@ def convert_date(date_str):
     if pd.isna(date_str):
         return pd.NaT  # Return Not a Time value for missing dates
     try:
-        return pd.to_datetime(date_str)
+        if is_US_date:
+            return pd.to_datetime(date_str, format="%m/%d/%y")
+        else:
+            return pd.to_datetime(date_str, format="%d/%m/%y", dayfirst=True)
+
     except ValueError:
         try:
-            return pd.to_datetime(date_str, format="%m/%d/%y") # Warning: but when I do my own (not AngelList) data
+            if is_US_date:
+                return pd.to_datetime(date_str)
+            else:
+                st.write(f"Could not convert date: {date_str}")
+                return pd.NaT  # Return NaT for unconvertible dates
         except ValueError:
             st.write(f"Could not convert date: {date_str}")
             return pd.NaT  # Return NaT for unconvertible dates
+
  
 def calculate_row_xirr(row, now):
     """Calculates the XIRR for a single row from the df with its normal set up 
@@ -223,7 +278,7 @@ def process_and_summarize_data(df):
     """
     # 2. Collect stats
     # Total rows in the dataframe (ie investments)
-    total_investments = len(df.index)
+    # total_investments = len(df.index)
     # Get unique transactions in the Name / Description column
     unique_names = df["Company/Fund"].unique()
     num_uniques = len(unique_names)
@@ -240,10 +295,6 @@ def process_and_summarize_data(df):
         df['Round Size'] = df['Round Size'].replace(r'[^\d]', '', regex=True).astype(float)
     if 'Valuation or Cap' in df.columns:
         # First remove the european decimals before forcing to a float
-        def replace_two_or_more_decimal_points(value):
-            if isinstance(value, str) and value.count('.') >= 2:
-                return value.replace('.', ',', value.count('.') - 1)
-            return value
         df['Valuation or Cap'] = df['Valuation or Cap'].apply(replace_two_or_more_decimal_points)  
         df['Valuation or Cap'] = df['Valuation or Cap'].replace(r'[^\d.]', '', regex=True).astype(float)
     
@@ -267,17 +318,17 @@ def process_and_summarize_data(df):
    
     # Now convert whole columns for Unrealized Value and Net Value now that have gathered which are locked (Forcing
     # Locked to zero
+    df['Net Value'] = df['Net Value'].apply(replace_two_or_more_decimal_points)  
     df["Net Value"] = df["Net Value"].replace(r'[^\d.]', '', regex=True).astype(float) 
     df["Unrealized Value"] = df["Unrealized Value"].replace(r'[^\d.]', '', regex=True).astype(float) 
-    
     df["Real Multiple"] = (df["Realized Value"]+df["Unrealized Value"])/df["Invested"]
 
     # Fix Dates
-    df['Invest Date'] = df['Invest Date'].apply(convert_date)
+    df['Invest Date'] = df['Invest Date'].apply(convert_date_two, is_us_format=st.session_state.has_angellist_data)
     has_realized_date = False
     if 'Realized Date' in df.columns :
         has_realized_date = True
-        df['Realized Date'] = df['Realized Date'].apply(convert_date)
+        df['Realized Date'] = df['Realized Date'].apply(convert_date_two, is_us_format=st.session_state.has_angellist_data)
 
     # Calculate basic XIRR for values - need to replace this with my proper logic I think later
     # improvement would be where some realised value to look at the financial information in AngelList and put in the other data to calculate this more clearly (overwriting this)
@@ -351,7 +402,7 @@ def process_and_summarize_data(df):
             summary_df = pd.DataFrame(summary_data)
         else:
             summary_df = pd.concat([summary_df, pd.DataFrame(summary_data)], ignore_index=True)
-
+    #st.write(summary_df)
     # 2.d Calculate lead statistics by aggregating data
     aggregated_df = df.groupby('Lead').agg(
         total_investments=('Company/Fund', 'size'),
@@ -452,7 +503,7 @@ def has_angellist_data(file_or_filepath):
             # Using getvalue
             bytes_data = file_or_filepath.getvalue()
             # Create a BytesIO object
-            buffer = io.BytesIO(bytes_data)
+            buffer = io.TextIOWrapper(io.BytesIO(bytes_data), encoding='utf-8')
             reader = csv.reader(buffer)
             header_row = next(reader, None)
 

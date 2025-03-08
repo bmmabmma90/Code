@@ -27,6 +27,7 @@ from AL_Functions import (
     show_realised_based_on_Lead,
     extract_company_name,
     convert_date,
+    convert_date_two,
     has_angellist_data
 )
 
@@ -49,8 +50,6 @@ if 'has_finance_data_file' not in st.session_state:
 if 'has_realized_dates' not in st.session_state:
     st.session_state.has_realized_dates = False
 
-if 'date_format' not in st.session_state: 
-    st.session_state.date_format = "%d/%m/%y"
 if 'has_angellist_data' not in st.session_state: 
     st.session_state.has_angellist_data = False
 
@@ -73,7 +72,7 @@ with st.sidebar:
         else:
             option = st.selectbox(
                 "Choose an option:",
-                ("About", "Load Data", "Stats", "Top Investments", "Top by Company", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no values", "Graphs")
+                ("Stats", "About", "Load Data", "Top Investments", "Top by Company", "Round", "Market", "Year", "Realized", "Lead Stats", "Leads no values", "Graphs")
             )
     else:
         option = st.selectbox(
@@ -175,6 +174,7 @@ Once complete, all ongoing calculations will be based on this new data.
 
                         st.dataframe(df)
                         # Set session state values for other screens
+                        st.session_state.total_value = 0 #Reset this so it doesn't carry over from another session
                         st.session_state.df = df
                         st.session_state.sumdf = summary_df
                         st.session_state.num_uniques = num_uniques
@@ -205,7 +205,7 @@ elif st.session_state.menu_choice == "Load Data":
         filepath = "/Users/deepseek/Downloads/test_data.csv"  
 
         df = pd.read_csv(filepath, header=1, skip_blank_lines=True)
-   #     st.session_state.has_angellist_data = has_angellist_data(filepath)
+        st.session_state.has_angellist_data = has_angellist_data(filepath)
         
         # if df is not None:
         #     print(f"Is AngelList data: {st.session_state.has_angellist_data}")
@@ -232,12 +232,13 @@ elif st.session_state.menu_choice == "Load Data":
     if force_load == False and uploaded_file is not None:
         try:
             df = pd.read_csv(uploaded_file, header=1, skip_blank_lines=True)
-            # st.session_state.has_angellist_data = has_angellist_data(uploaded_file)
-        
+            st.session_state.has_angellist_data = has_angellist_data(uploaded_file)
+
             # if st.session_state.has_angellist_data: 
             #     st.session_state.date_format = "%m/%d/%y" 
 
             st.session_state.has_data_file = True
+            st.session_state.total_value = 0 #Reset this so it doesn't carry over from another session
             st.session_state.df = df
             with st.container(height=200):
                 st.write(df)
@@ -298,6 +299,7 @@ elif st.session_state.menu_choice == "Load Data":
         # Button
         if st.button("Proceed", type="primary"):
             st.session_state.menu_choice = "Stats"
+            option = "Stats"
         #   st.experimental_rerun()
 
         # Set session state values for other screens
@@ -324,23 +326,29 @@ Valid operations are on all column names and can use <,>,=   and or 'column name
 
 elif st.session_state.menu_choice == "Stats":
     st.subheader("Investment Statistics", divider=True)
-    st.markdown("Show statistics across the portfolio.  NB: If you have 'Locked' data (eg from AngelList) you will need to go into AngelList to get the total portfolio value which is then used to work out the value increase/decrease of all 'Locked' investments")
+    st.markdown("Show statistics across the portfolio.")
+    if st.session_state.has_angellist_data :
+        st.write("This data is from AngelList so if there are locked values you will need to set the total value by looking up AngelList (the total portfolio value). When specified the remaining fields will be calculated. If this is test data just enter a value higher than the current total valution in the table below.")
     # Write all the outputs to the screen
 
     sumdf = st.session_state.sumdf
-    total_value = sumdf.loc[sumdf['Category'] == 'Totals', 'Realized'].iloc[0] + sumdf.loc[sumdf['Category'] == 'Totals', 'Unrealized'].iloc[0]
-   
+     
     debug_harness = False
     if debug_harness : st.write(st.session_state)
     if st.session_state.num_locked > 0 and st.session_state.total_value == 0 :
         total_value = st.number_input("Insert the total value from AngelList")
+        if total_value > 0 : # Only when a value is entered do these calculations
+            st.session_state.total_value = total_value
+            locked_value = total_value - sumdf.loc[sumdf['Category'] == 'Totals', 'Unrealized'].iloc[0]
+            # Add this value to Totals (UnRealized) and (Net Value), also add to Locked (Unrealized) and (Net)
+            st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Locked', 'Unrealized'] += float(locked_value)
+            st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Totals', 'Unrealized'] += float(locked_value)
+            st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Locked', 'Value'] += float(locked_value)
+            st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Totals', 'Value'] += float(locked_value)
+    elif st.session_state.num_locked == 0: # This is when there aren't any locked values so just set total_value at the total of Realized and Unrealized (just in case Value not entered correctly)
+        total_value = sumdf.loc[sumdf['Category'] == 'Totals', 'Realized'].iloc[0] + sumdf.loc[sumdf['Category'] == 'Totals', 'Unrealized'].iloc[0]     
         st.session_state.total_value = total_value
-        locked_value = total_value - sumdf.loc[sumdf['Category'] == 'Totals', 'Unrealized'].iloc[0]
-        st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Locked', 'Unrealized'] = float(locked_value)
-        st.session_state.sumdf.loc[st.session_state.sumdf['Category'] == 'Totals', 'Unrealized'] = total_value
-    elif st.session_state.total_value == 0 :
-        st.session_state.total_value = total_value
-
+   
     a, b, f, g = st.columns(4) # Macro stats - investments + companies plus syndicate stats
     e, c, d, h, z = st.columns(5) # Macro valuation stats - total value, net value and invested
     i, j, k, l = st.columns(4) # Macro - averages etc - investment mean, median, multiple > 1x mean, realised % 
@@ -350,16 +358,16 @@ elif st.session_state.menu_choice == "Stats":
     b.metric(label="Companies", value=st.session_state.num_uniques, border=True)
     if st.session_state.total_value > 0:
         c.metric(label="Total Value",value=format_large_number(total_value), border=True)
-        d.metric(label="Multiple (x)",value=format_multiple(sumdf.loc[sumdf['Category'] == 'Totals', 'Multiple'].iloc[0]), border=True)
+        d.metric(label="Multiple",value=format_multiple(sumdf.loc[sumdf['Category'] == 'Totals', 'Multiple'].iloc[0]), border=True)
 
         # Calculate overall XIRR
         if 'overall_XIRR' not in st.session_state :                    
             #Make sure we feed it the unrealized value 
             overall_XIRR = calculate_portfolio_xirr(st.session_state.df, st.session_state.has_realized_dates, sumdf.loc[sumdf['Category'] == 'Totals', 'Unrealized'].iloc[0])
             st.session_state.overall_XIRR = overall_XIRR
-            h.metric(label="IRR %",value=format_percent(overall_XIRR), border=True)
+            h.metric(label="IRR",value=format_percent(overall_XIRR), border=True)
         else:
-            h.metric(label="IRR %",value=format_percent(st.session_state.overall_XIRR), border=True)
+            h.metric(label="IRR",value=format_percent(st.session_state.overall_XIRR), border=True)
     z.metric(label="DPI",value=format_multiple(sumdf.loc[sumdf['Category'] == 'Totals', 'Realized'].iloc[0]/sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]), border=True)
     e.metric(label="Invested",value=format_large_number(sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]), border=True)
     f.metric(label="Syndicates Invested",value=st.session_state.num_leads, border=True)
@@ -384,16 +392,15 @@ elif st.session_state.menu_choice == "Top Investments":
     st.markdown('''Show selected top investments across the portfolio (by return multiple).  
                  You can use the slider to restrict the number of values shown on the screen
     ''')
-
-    # Write all the outputs to the screen
-    top_filter = st.slider("Show how many",1,50,5)   
     # Calculate the top X investments by multiple and show information for them
 
     # Load the data from the session state
     df = st.session_state.df
     filtered_df = df[df['Real Multiple'] > 1]
-    #st.write(df)
     sorted_df = filtered_df.dropna(subset=['Real Multiple']).sort_values(by='Real Multiple', ascending=False)
+
+    # Write all the outputs to the screen
+    top_filter = st.slider("Show how many",1,len(sorted_df),5)   
 
     # Get ready for screen display - drop columns and format
     # Drop the filtered columns
@@ -493,10 +500,8 @@ elif st.session_state.menu_choice == "Top by Company":
 You can use the slider to restrict the number of values shown on the screen
     ''')
 
-    # Write all the outputs to the screen
-    top_filter = st.slider("Show how many",1,50,5)   
+ 
     # Calculate the top X investments by multiple and show information for them
-
     # Load the data from the session state
     df = st.session_state.df
 
@@ -526,6 +531,9 @@ You can use the slider to restrict the number of values shown on the screen
             First_Invest_Date=('Invest Date', 'min'),  # don't use either of these values yet
             Last_Invest_Date=('Invest Date', 'max'), # this is the second not used
         ).reset_index()
+
+    # Write all the outputs to the screen
+    top_filter = st.slider("Show how many",1,len(grouped),5)  
     # Add in 'Website/URL' if it is in the df
     # if 'Website' in df.columns:
     #     grouped = pd.merge(grouped, df[['Company/Fund', 'Website']], on='Company/Fund', how='inner')
@@ -677,7 +685,6 @@ elif st.session_state.menu_choice == "Round":
     st.subheader("Round Stats", divider=True)
     st.markdown("Show statistics related to rounds of investment")
 
-
     # define the round order to use to reset things as required
     # could use this for filtering/sorting and display order of round data for AngelList for example but have to check that none are missing or it won't display them
     round_order = ['Preseed', 'Pre-Seed', 'Seed', 'Seed+', 'Series A', 'Series A+','Series B', 'Series B+', 'Series C', 'Other']
@@ -735,11 +742,12 @@ elif st.session_state.menu_choice == "Round":
     if 'Valuation or Cap' not in temp_df.columns or temp_df['Valuation or Cap'].isnull().all():
         st.write("Data contains no 'Valuation or Cap' data.")
     else:
-        top_filter = st.slider("Show how many categories",1,20,4)  
-
         # Create a figure with two subplots - one for the box plot and one for the individual points
         valid_rounds = temp_df['Round'].dropna().unique()
         valid_round_order = [round_name for round_name in round_order if round_name in valid_rounds]
+
+        top_filter = st.slider("Last round to display in graphs (for readability) categories",1,len(valid_round_order),3)  
+
         valid_round_order_abridged = valid_round_order[:top_filter]
 
         fig, ax = plt.subplots(figsize=(12, 10))
@@ -810,7 +818,7 @@ elif st.session_state.menu_choice == "Round":
         st.dataframe(summary_df.style.format({'Median': format_large_number, 'Min': format_large_number, 'Max': format_large_number}), hide_index=True)
 
         # Now display a slider that allows us to select specific rounds to examine each investment valuation in that range
-        round_filter = st.select_slider("Select the round to analyse further", options=valid_round_order) 
+        round_filter = st.pills("Select the round to analyse further", options=valid_round_order, default=valid_round_order[0]) 
         filtered_round_investments = temp_df[temp_df['Round'] == round_filter]
         filtered_round_investments = filtered_round_investments.sort_values(by='Invest Date')
 
@@ -820,15 +828,28 @@ elif st.session_state.menu_choice == "Round":
         # Calculate the median value
         median_val = summary_df.loc[summary_df['Round'] == round_filter, 'Median'].iloc[0]
         
-       # Prepare data for trendline
+        # Prepare data for trendline
         X = np.arange(len(filtered_round_investments)).reshape(-1, 1)  # X as index
         Y = filtered_round_investments['Valuation or Cap']
-        weights = filtered_round_investments['Invested']  # This should be numeric
 
-        # Fit the model
-        model = LinearRegression()
-        model.fit(X, Y, sample_weight=weights)
-        trendline = model.predict(X)
+        # Remove rows where Y is NaN
+        nan_mask = np.isnan(Y)
+        X_filtered = X[~nan_mask]
+        Y_filtered = Y[~nan_mask]
+        
+        weights = filtered_round_investments['Invested']  # This should be numeric
+        weights_filtered = weights[~nan_mask]
+
+        # Fit the model only if there is some data after filtering
+        if len(X_filtered) > 0:
+            # Fit the model
+            model = LinearRegression()
+            model.fit(X_filtered, Y_filtered, sample_weight=weights_filtered)
+            trendline = model.predict(X_filtered)
+        else:
+            trendline = []
+            st.warning("No valid data points to calculate trendline after filtering for NaN values.")
+
 
         # Show the median line
         ax2.axhline(median_val, color='red', linestyle='--', label='Median Valuation')
@@ -863,12 +884,12 @@ elif st.session_state.menu_choice == "Round":
 elif st.session_state.menu_choice == "Market":
     st.subheader("Market Stats", divider=True)
     st.markdown("Show statistics related to markets invested in")
-    top_filter = st.slider("Show how many in graphs",1,50,10) 
 
     temp_df = st.session_state.df.copy()
-
     temp_df["Increase"] = temp_df["Net Value"] - temp_df["Invested"]    
     grouped = temp_df.groupby("Market", as_index=False).agg({"Invested":"sum", "Increase":"sum"})
+    top_filter = st.slider("Show how many in graphs",1,len(grouped),8) 
+
     invested_sum = grouped["Invested"].sum()
     value_sum = grouped[grouped["Increase"] > 0]["Increase"].sum()
     grouped["Invested %"] = grouped["Invested"]/invested_sum if invested_sum !=0 else 0
@@ -999,10 +1020,7 @@ elif st.session_state.menu_choice == "Year":
 elif st.session_state.menu_choice == "Lead Stats":        
     st.subheader("Lead Stats", divider=True)
     st.markdown("Show statistics about the top deal leads")
-
     # Show the stats regarding Syndicate LEads
-    top_filter = st.slider("Show how many",1,60,5)   
-
     # Load the data from the session state
     df = st.session_state.df
 
@@ -1015,6 +1033,7 @@ elif st.session_state.menu_choice == "Lead Stats":
                 Value=('Unrealized Value', 'sum')
     ).reset_index()
 
+    top_filter = st.slider("Show how many",1,len(aggregated_df),5)   
     # Exclude where no value as sum (result would be infinite)
     #aggregated_df = aggregated_df[aggregated_df["sum_value"] != 0]
 
@@ -1194,37 +1213,38 @@ elif st.session_state.menu_choice == "Graphs":
         st.pyplot(fig)
 
     # 5. Plot of Instrument vs Invested
-    with col5:
-        if 'Instrument' in df.columns :
-            # Really dumb way of fudging the legends by renaming in the data
-            # Calculate the percentage of total investment for each instrument
-            instrument_investment_percentage = df.groupby('Instrument')['Invested'].sum() / df['Invested'].sum() * 100
-            # Set up a temporary data set and rename all the Instruments to showing % so they are in the final graph
-            df_temp = df.copy()
-            df_temp['Instrument'] = df_temp['Instrument'].replace("debt", f"debt ({instrument_investment_percentage.get('debt', 0):.1f}%)")
-            df_temp['Instrument'] = df_temp['Instrument'].replace("equity", f"equity ({instrument_investment_percentage.get('equity', 0):.1f}%)")
-            df_temp['Instrument'] = df_temp['Instrument'].replace("safe", f"safe ({instrument_investment_percentage.get('safe', 0):.1f}%)")
-            # Create the violin plot
-            fig, ax = plt.subplots(figsize=(10, 6))  # Increase figure size
-            sns.violinplot(df_temp, x='Invested', y='Instrument', hue='Instrument', inner='stick', ax=ax)
-            sns.despine(top=True, right=True, bottom=True, left=True)
-            ax.set_title('Instrument vs Invested')
-            ax.set_xlabel('Investment Amount ($)')
-            ax.set_ylabel('Instrument')
-            # ax.legend(loc='upper right') - wasn't displaying clearly
-            plt.tight_layout()  # Improve layout
-            st.pyplot(fig)
+    if st.session_state.advanced_user:
+        with col5:
+            if 'Instrument' in df.columns :
+                # Really dumb way of fudging the legends by renaming in the data
+                # Calculate the percentage of total investment for each instrument
+                instrument_investment_percentage = df.groupby('Instrument')['Invested'].sum() / df['Invested'].sum() * 100
+                # Set up a temporary data set and rename all the Instruments to showing % so they are in the final graph
+                df_temp = df.copy()
+                df_temp['Instrument'] = df_temp['Instrument'].replace("debt", f"debt ({instrument_investment_percentage.get('debt', 0):.1f}%)")
+                df_temp['Instrument'] = df_temp['Instrument'].replace("equity", f"equity ({instrument_investment_percentage.get('equity', 0):.1f}%)")
+                df_temp['Instrument'] = df_temp['Instrument'].replace("safe", f"safe ({instrument_investment_percentage.get('safe', 0):.1f}%)")
+                # Create the violin plot
+                fig, ax = plt.subplots(figsize=(10, 6))  # Increase figure size
+                sns.violinplot(df_temp, x='Invested', y='Instrument', hue='Instrument', inner='stick', ax=ax)
+                sns.despine(top=True, right=True, bottom=True, left=True)
+                ax.set_title('Instrument vs Invested')
+                ax.set_xlabel('Investment Amount ($)')
+                ax.set_ylabel('Instrument')
+                # ax.legend(loc='upper right') - wasn't displaying clearly
+                plt.tight_layout()  # Improve layout
+                st.pyplot(fig)
 
-    # 6. Plot of Round Size and Multiple
-    # from scipy import stats
-    # import numpy as np
+        # 6. Plot of Round Size and Multiple
+        # from scipy import stats
+        # import numpy as np
 
-    # Filter out rows with missing or unrealistic multiples
-    df_filtered = df.dropna(subset=['Round Size', 'Real Multiple'])
+        # Filter out rows with missing or unrealistic multiples
+        df_filtered = df.dropna(subset=['Round Size', 'Real Multiple'])
 
-    # Calculate correlation
-    correlation = df_filtered['Round Size'].corr(df_filtered['Real Multiple'])
-    st.write(f"Correlation coefficient between Round Size and Multiple: {correlation:.2f}")
+        # Calculate correlation
+        correlation = df_filtered['Round Size'].corr(df_filtered['Real Multiple'])
+        st.write(f"Correlation coefficient between Round Size and Multiple: {correlation:.2f}")
 
 
 elif st.session_state.menu_choice == "Tax":
