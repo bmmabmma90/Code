@@ -7,6 +7,8 @@ from datetime import datetime, date
 import re
 import numpy as np # User for colour stuff
 from matplotlib import pyplot as plt
+from matplotlib.ticker import FuncFormatter
+from sklearn.linear_model import LinearRegression
 import seaborn as sns
 import squarify
 from AL_Functions import (
@@ -196,10 +198,11 @@ elif st.session_state.menu_choice == "Load Data":
     force_load = st.session_state.force_load
 
     if force_load == True:
-        filepath = "/Users/deepseek/Downloads/2021.csv"  # Replace with your file path
+        filepath = "/Users/deepseek/Downloads/2021.csv"  
         filepath = "/Users/deepseek/Downloads/ben-armstrong_angellist_investments_2025_02_21.csv"
-        filepath = "/Users/deepseek/Downloads/2022.csv"  # Replace with your file path
-        filepath = "/Users/deepseek/Downloads/Synd.csv"  # Replace with your file path
+        filepath = "/Users/deepseek/Downloads/2022.csv"  
+        filepath = "/Users/deepseek/Downloads/Synd.csv"  
+        filepath = "/Users/deepseek/Downloads/test_data.csv"  
 
         df = pd.read_csv(filepath, header=1, skip_blank_lines=True)
    #     st.session_state.has_angellist_data = has_angellist_data(filepath)
@@ -326,7 +329,9 @@ elif st.session_state.menu_choice == "Stats":
 
     sumdf = st.session_state.sumdf
     total_value = sumdf.loc[sumdf['Category'] == 'Totals', 'Realized'].iloc[0] + sumdf.loc[sumdf['Category'] == 'Totals', 'Unrealized'].iloc[0]
-    print(st.session_state)
+   
+    debug_harness = False
+    if debug_harness : st.write(st.session_state)
     if st.session_state.num_locked > 0 and st.session_state.total_value == 0 :
         total_value = st.number_input("Insert the total value from AngelList")
         st.session_state.total_value = total_value
@@ -337,7 +342,7 @@ elif st.session_state.menu_choice == "Stats":
         st.session_state.total_value = total_value
 
     a, b, f, g = st.columns(4) # Macro stats - investments + companies plus syndicate stats
-    c, d, h, e = st.columns(4) # Macro valuation stats - total value, net value and invested
+    e, c, d, h, z = st.columns(5) # Macro valuation stats - total value, net value and invested
     i, j, k, l = st.columns(4) # Macro - averages etc - investment mean, median, multiple > 1x mean, realised % 
     # g, h = st.columns(2) # Syndicate info
 
@@ -349,11 +354,13 @@ elif st.session_state.menu_choice == "Stats":
 
         # Calculate overall XIRR
         if 'overall_XIRR' not in st.session_state :                    
-            overall_XIRR = calculate_portfolio_xirr(st.session_state.df, total_value)
+            #Make sure we feed it the unrealized value 
+            overall_XIRR = calculate_portfolio_xirr(st.session_state.df, st.session_state.has_realized_dates, sumdf.loc[sumdf['Category'] == 'Totals', 'Unrealized'].iloc[0])
             st.session_state.overall_XIRR = overall_XIRR
             h.metric(label="IRR %",value=format_percent(overall_XIRR), border=True)
         else:
             h.metric(label="IRR %",value=format_percent(st.session_state.overall_XIRR), border=True)
+    z.metric(label="DPI",value=format_multiple(sumdf.loc[sumdf['Category'] == 'Totals', 'Realized'].iloc[0]/sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]), border=True)
     e.metric(label="Invested",value=format_large_number(sumdf.loc[sumdf['Category'] == 'Totals', 'Invested'].iloc[0]), border=True)
     f.metric(label="Syndicates Invested",value=st.session_state.num_leads, border=True)
     g.metric(label="Syndicates no value info",value=st.session_state.num_zero_value_leads, border=True)
@@ -537,8 +544,9 @@ You can use the slider to restrict the number of values shown on the screen
         all_transactions = df.loc[df['Company/Fund'] == row['Company/Fund']]
         # Create a dataframe to store all the transactions
 
-     #   st.write(row['Company/Fund'])
-     #   st.write(all_transactions)
+        debug_harness = False
+        if debug_harness: st.write(row['Company/Fund'])
+        if debug_harness: st.write(all_transactions)
         # Create a list to store all cash flows
         company_xirr = 0.0
         if all_transactions['Net Value'].iloc[0] > 0 : # If no positives then doesn't make sense
@@ -548,14 +556,14 @@ You can use the slider to restrict the number of values shown on the screen
             
             # Add the sum of Net value as exit value with time as now
             total_net_value = all_transactions['Net Value'].sum()
-     #       st.write(row)
+            if debug_harness: st.write(row)
             if st.session_state.has_realized_dates and pd.notna(row["Realized Date"]):
                 realized_date = row["Realized Date"]
-     #          st.write("Did find a realized date for the row")
+                if debug_harness : st.write("Did find a realized date for the row")
                 all_cashflows.append((realized_date, total_net_value))
             else:
                 all_cashflows.append((datetime.now(), total_net_value))
-     #      st.write(all_cashflows)
+            if debug_harness : st.write(all_cashflows)
             # Calculate the xirr for this row, and store it in the overall dataframe
             try:
                 # Calculate the XIRR for this company
@@ -563,8 +571,8 @@ You can use the slider to restrict the number of values shown on the screen
             except ValueError:
                 company_xirr = 0.0
             # Find the correct index to update in 'grouped'
-    #        st.write("Company XIRR:")
-    #        st.write(company_xirr)
+            if debug_harness : st.write(f"Company XIRR: {company_xirr}")
+
         company_name = all_transactions['Company/Fund'].iloc[0]  # Get the company name from all_transactions
         index_to_update = grouped.index[grouped['Company/Fund'] == company_name]
         grouped.loc[index_to_update[0], 'XIRR'] = company_xirr # Update the first match - should only be one
@@ -728,7 +736,7 @@ elif st.session_state.menu_choice == "Round":
         st.write("Data contains no 'Valuation or Cap' data.")
     else:
         top_filter = st.slider("Show how many categories",1,20,4)  
-        from matplotlib.ticker import FuncFormatter
+
         # Create a figure with two subplots - one for the box plot and one for the individual points
         valid_rounds = temp_df['Round'].dropna().unique()
         valid_round_order = [round_name for round_name in round_order if round_name in valid_rounds]
@@ -818,7 +826,6 @@ elif st.session_state.menu_choice == "Round":
         weights = filtered_round_investments['Invested']  # This should be numeric
 
         # Fit the model
-        from sklearn.linear_model import LinearRegression
         model = LinearRegression()
         model.fit(X, Y, sample_weight=weights)
         trendline = model.predict(X)

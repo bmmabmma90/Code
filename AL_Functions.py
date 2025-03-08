@@ -181,11 +181,11 @@ def calculate_xirr(all_cashflows):
         return 0.0  # Or None, depending on how you want to handle errors
 
 # Calculate the whole portfolio's XIRR using the XIRR function
-def calculate_portfolio_xirr(df, total_net_value):
-    """Calculates the overall XIRR of the whole portfolio. Actually of any list of Invest Date + Invested pairs
-    Note that it calculates it assuming that the exit was now (not at a previous time)
+def calculate_portfolio_xirr(df, has_realized_dates, total_unrealized_value):
+    """Calculates the overall XIRR of the whole portfolio.
     Args:
-        df: DataFrame with 'Invest Date', 'Invested' but uses total_net_value to do the total calculation.
+        df: DataFrame with 'Invest Date', 'Invested', possibly a 'Realized Date' but uses 
+        total_net_value (this should exclude realised value) to do the total calculation.
     Returns:
         The portfolio XIRR as a float, or None if calculation fails.
     """
@@ -193,13 +193,14 @@ def calculate_portfolio_xirr(df, total_net_value):
         # Combine all cashflows into a single list
         all_cashflows = []
         for index, row in df.iterrows():
+            # Do the investment amount
             if pd.notna(row['Invest Date']):
                 all_cashflows.append((row['Invest Date'], -row['Invested']))
-        # Add the total value as at now or the Realized IRR if it exists
-        if 'Realized Date' in row and pd.notna(row['Realized Date']):
-            all_cashflows.append((row['Realized Date'], total_net_value))
-        else:
-            all_cashflows.append((datetime.now(), total_net_value)) 
+            # Add any realized amount (if present)
+            if has_realized_dates and pd.notna(row['Realized Date']):
+                all_cashflows.append((row['Realized Date'], row['Realized Value']))
+        # Add the total unrealized value as of now 
+        all_cashflows.append((datetime.now(), total_unrealized_value)) 
    
         # Calculate the overall portfolio XIRR
         portfolio_xirr = xirr(all_cashflows)
