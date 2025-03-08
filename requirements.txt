@@ -5,7 +5,5 @@ seaborn
 squarify
 numpy
 pyxirr
-datetime
-re
 matplotlib
-sklearn
+scikit-learn
